@@ -146,7 +146,10 @@ proptest! {
         let minimum = if udp { 80 } else { 64 };
         match header_length(flags, udp) {
             Ok(Some(length)) => prop_assert!((minimum..=256).contains(&length)),
-            Ok(None) => prop_assert_eq!(flags & (flags::VERSION1 | flags::VERSION2 | flags::EXTEND), 0),
+            Ok(None) => prop_assert!(
+                flags & (flags::VERSION1 | flags::VERSION2 | flags::EXTEND) == 0
+                    || (udp && flags == flags::UDP_COMPAT_FILL)
+            ),
             Err(error) => prop_assert_eq!(error, Error::Invalid),
         }
     }

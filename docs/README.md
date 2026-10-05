@@ -9,4 +9,5 @@ Covers: the index of every page under `docs/`.
 | [Test header](concepts/test-header.md) | Concept | What a client sends at the start of a test, and how a server reads it |
 | [End of a UDP test](concepts/udp-end-of-test.md) | Concept | The negative packet ID that ends a UDP test, and the server report that answers it |
 | [Loss, out-of-order and jitter](concepts/loss-and-jitter.md) | Concept | How a UDP receiver counts from the packet IDs and send times |
+| [ADR-0001: The wire module reads the bytes and leaves the rules to the protocol](decisions/0001-wire-format.md) | ADR | Raw flag words, the `-C` fill in `header_length`, and zeros in the server report's transit statistics |
 | [Findings not yet fixed](todo.md) | Findings | What a piece of work saw and did not fix, with the commit that found it |

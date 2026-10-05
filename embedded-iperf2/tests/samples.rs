@@ -22,8 +22,9 @@ const VERSION: HeaderAck = HeaderAck {
     version_l: 0x0002_0003,
 };
 
-/// The fields every 2.2.2 test header in the samples shares.
-fn check_common(header: &TestHeader) {
+/// The fields every 2.2.2 test header in the samples shares, and the port the client connected to.
+fn check_common(header: &TestHeader, port: u32) {
+    assert_eq!(header.port, port);
     assert_eq!(header.num_threads, 1);
     assert_eq!(header.lower_flags, 0);
     assert_eq!(
@@ -32,9 +33,9 @@ fn check_common(header: &TestHeader) {
     );
 }
 
-/// Checks the test header at the start of a TCP client stream, and returns it.
-fn tcp_header(stream: &[u8], flags_word: u32, amount: Amount, rate: u64) -> TestHeader {
-    let header = TestHeader::parse(stream).unwrap();
+/// Checks the test header at the start of a TCP sample's client stream, and returns it.
+fn tcp_header(sample: &common::Sample, flags_word: u32, amount: Amount, rate: u64) -> TestHeader {
+    let header = TestHeader::parse(&sample.client_stream()).unwrap();
     assert_eq!(header.flags, flags_word);
     assert_eq!(
         header_length(header.flags, false),
@@ -43,7 +44,7 @@ fn tcp_header(stream: &[u8], flags_word: u32, amount: Amount, rate: u64) -> Test
     assert_eq!(header.buf_len, 16384);
     assert_eq!(header.amount, amount);
     assert_eq!(header.rate, rate);
-    check_common(&header);
+    check_common(&header, sample.port);
     header
 }
 
@@ -51,7 +52,8 @@ fn tcp_header(stream: &[u8], flags_word: u32, amount: Amount, rate: u64) -> Test
 fn tcp_sends_the_header_and_the_server_acks_it() {
     let sample = common::read("tcp");
     let stream = sample.client_stream();
-    let header = tcp_header(&stream, 0x4001_0080, Amount::Bytes(65536), 0);
+    let header = tcp_header(&sample, 0x4001_0080, Amount::Bytes(65536), 0);
+    assert_eq!(header.upper_flags, 0);
     assert!(!header.is_reverse());
     assert_eq!(stream.len(), 65536, "the header counts toward -n");
     let reply = sample.server_stream();
@@ -63,7 +65,7 @@ fn tcp_sends_the_header_and_the_server_acks_it() {
 fn tcp_time_sends_the_duration_and_the_rate() {
     let sample = common::read("tcp-time");
     let header = tcp_header(
-        &sample.client_stream(),
+        &sample,
         0x4001_0080,
         Amount::Time { centiseconds: 200 },
         262_144,
@@ -76,7 +78,7 @@ fn tcp_time_sends_the_duration_and_the_rate() {
 fn tcp_reverse_data_comes_in_bursts_without_an_ack() {
     let sample = common::read("tcp-reverse");
     let stream = sample.client_stream();
-    let header = tcp_header(&stream, 0x4401_0080, Amount::Bytes(65536), 0);
+    let header = tcp_header(&sample, 0x4401_0080, Amount::Bytes(65536), 0);
     assert_eq!(header.upper_flags, flags::REVERSE);
     assert!(header.is_reverse());
     assert_eq!(stream.len(), TEST_HEADER_LEN);
@@ -123,8 +125,8 @@ fn check_ids(datagrams: &[Vec<u8>]) -> i64 {
     data as i64
 }
 
-/// Checks the test header of a UDP client's datagram.
-fn udp_header(datagram: &[u8], flags_word: u32, amount: Amount) -> TestHeader {
+/// Checks the test header of a UDP client's datagram, sent to `port`.
+fn udp_header(datagram: &[u8], port: u32, flags_word: u32, amount: Amount) -> TestHeader {
     assert_eq!(datagram.len(), 512);
     let header = TestHeader::parse(&datagram[PREFIX_LEN..]).unwrap();
     assert_eq!(header.flags, flags_word);
@@ -135,7 +137,7 @@ fn udp_header(datagram: &[u8], flags_word: u32, amount: Amount) -> TestHeader {
     assert_eq!(header.buf_len, 512);
     assert_eq!(header.amount, amount);
     assert_eq!(header.rate, 262_144);
-    check_common(&header);
+    check_common(&header, port);
     header
 }
 
@@ -143,7 +145,7 @@ fn udp_header(datagram: &[u8], flags_word: u32, amount: Amount) -> TestHeader {
 fn check_forward_udp(case: &str, amount: Amount) {
     let sample = common::read(case);
     for datagram in &sample.client {
-        let header = udp_header(datagram, 0x4801_00A0, amount);
+        let header = udp_header(datagram, sample.port, 0x4801_00A0, amount);
         assert_eq!(header.upper_flags, 0);
     }
     let data = check_ids(&sample.client);
@@ -174,7 +176,12 @@ fn udp_bytes_sends_the_byte_count() {
 fn udp_reverse_data_has_a_prefix_and_no_header() {
     let sample = common::read("udp-reverse");
     for datagram in &sample.client {
-        let header = udp_header(datagram, 0xEC01_00A0, Amount::Time { centiseconds: 200 });
+        let header = udp_header(
+            datagram,
+            sample.port,
+            0xEC01_00A0,
+            Amount::Time { centiseconds: 200 },
+        );
         assert_eq!(header.upper_flags, flags::REVERSE);
         assert!(header.is_reverse());
         assert_eq!(Prefix::parse(datagram).unwrap().packet_id, 1);

@@ -8,10 +8,13 @@ pub const TEST_HEADER_LEN: usize = 64;
 /// The longest header length that `flags` may state.
 const MAX_STATED_LEN: usize = 256;
 
+/// The longest duration `mAmount` holds: its negation must keep the top bit set.
+const MAX_CENTISECONDS: u32 = 0x8000_0000;
+
 /// The length of a test: a duration or a byte count (W-6).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Amount {
-    /// A duration in units of 10 ms, from 1 to 2^31.
+    /// A duration in units of 10 ms, from 1 to 2^31. The encoder clamps a duration outside that range.
     Time {
         /// The duration in hundredths of a second.
         centiseconds: u32,
@@ -86,7 +89,7 @@ impl TestHeader {
         put_u32(bytes, 8, self.port);
         put_u32(bytes, 12, self.buf_len);
         let amount = match self.amount {
-            Amount::Time { centiseconds } => centiseconds.wrapping_neg(),
+            Amount::Time { centiseconds } => centiseconds.clamp(1, MAX_CENTISECONDS).wrapping_neg(),
             Amount::Bytes(count) => count & 0x7FFF_FFFF,
         };
         put_u32(bytes, 20, amount);
@@ -100,6 +103,9 @@ impl TestHeader {
     }
 
     /// Whether the header asks for a reverse test: `VERSION2` in `flags` and `REVERSE` in `upperflags`.
+    ///
+    /// It does not check `EXTEND`. A stock server reads `upperflags` only with `EXTEND`, which every 2.2.2 client
+    /// sets, so a caller that must match the stock server checks `EXTEND` too.
     pub fn is_reverse(&self) -> bool {
         self.flags & flags::VERSION2 != 0 && self.upper_flags & flags::REVERSE != 0
     }
@@ -109,11 +115,13 @@ impl TestHeader {
 /// for UDP, so a UDP length includes the prefix.
 ///
 /// Returns `None` when `flags` has none of `VERSION1`, `VERSION2` and `EXTEND`, so the stream has no test header.
-/// Returns `Invalid` for a length above 256, or below the 64 bytes of a TCP header or the 80 of a UDP one.
-///
-/// The fill of a UDP client with `-C`, 0x36373839, sets `VERSION2` and states a length above 256. A UDP caller
-/// checks for it before calling this (P-11).
+/// Returns `None` for UDP when `flags` is [`UDP_COMPAT_FILL`](flags::UDP_COMPAT_FILL), as a stock server does
+/// before it reads the bits (P-11). Returns `Invalid` for a length above 256, or below the 64 bytes of a TCP
+/// header or the 80 of a UDP one.
 pub fn header_length(flags: u32, udp: bool) -> Result<Option<usize>, Error> {
+    if udp && flags == flags::UDP_COMPAT_FILL {
+        return Ok(None);
+    }
     if flags & (flags::VERSION1 | flags::VERSION2 | flags::EXTEND) == 0 {
         return Ok(None);
     }
@@ -277,7 +285,28 @@ mod tests {
     }
 
     #[test]
-    fn the_udp_fill_of_a_compat_client_states_a_length_too_long() {
-        assert_eq!(header_length(0x3637_3839, true), Err(Error::Invalid));
+    fn the_udp_fill_of_a_compat_client_is_no_header() {
+        assert_eq!(header_length(flags::UDP_COMPAT_FILL, true), Ok(None));
+        assert_eq!(
+            header_length(flags::UDP_COMPAT_FILL, false),
+            Err(Error::Invalid)
+        );
+    }
+
+    #[test]
+    fn a_duration_outside_its_range_is_clamped() {
+        let mut header = udp_reverse();
+        let mut out = [0; 64];
+        for (centiseconds, written) in [(0, 1), (0x8000_0001, 0x8000_0000), (u32::MAX, 0x8000_0000)]
+        {
+            header.amount = Amount::Time { centiseconds };
+            header.encode(&mut out).unwrap();
+            assert_eq!(
+                TestHeader::parse(&out).unwrap().amount,
+                Amount::Time {
+                    centiseconds: written
+                }
+            );
+        }
     }
 }

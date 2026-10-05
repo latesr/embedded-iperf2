@@ -24,3 +24,35 @@ pub const LEN_MASK: u32 = 0x0000_FFFE;
 
 /// The `upperflags` bit of a reverse test.
 pub const REVERSE: u16 = 0x0400;
+
+/// Not a flag: the fill `6789` that a UDP client with `-C` sends where `flags` would be. A UDP datagram with it has
+/// no test header (P-11).
+pub const UDP_COMPAT_FILL: u32 = 0x3637_3839;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The wire module joins these with `|`, and `.cargo/mutants.toml` skips the mutant to `^` because no two
+    /// overlap.
+    #[test]
+    fn each_flag_is_one_bit_and_none_overlap() {
+        let bits = [
+            VERSION1,
+            EXTEND,
+            UDPTESTS,
+            KEYCHECK,
+            SEQNO64B,
+            VERSION2,
+            V2PEERDETECT,
+            BOUNCEBACK,
+            LEN_BIT,
+        ];
+        let mut seen = LEN_MASK;
+        for bit in bits {
+            assert_eq!(bit.count_ones(), 1, "{bit:#x}");
+            assert_eq!(seen & bit, 0, "{bit:#x}");
+            seen |= bit;
+        }
+    }
+}

@@ -9,6 +9,9 @@ pub struct Sample {
     pub client: Vec<Vec<u8>>,
     /// Each record from the server to the client.
     pub server: Vec<Vec<u8>>,
+    /// The port the client connected to, from the line `Client connecting to 127.0.0.1, TCP port N` that it
+    /// printed. It is the relay's port, and changes with each recording.
+    pub port: u32,
 }
 
 impl Sample {
@@ -28,9 +31,19 @@ pub fn read(case: &str) -> Sample {
     let path =
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(format!("tests/samples/2.2.2/{case}.bin"));
     let bytes = std::fs::read(&path).unwrap_or_else(|error| panic!("{}: {error}", path.display()));
+    let printed = path.with_extension("client.txt");
+    let printed = std::fs::read_to_string(&printed)
+        .unwrap_or_else(|error| panic!("{}: {error}", printed.display()));
+    let port = printed
+        .lines()
+        .find_map(|line| line.strip_prefix("Client connecting to 127.0.0.1, "))
+        .and_then(|rest| rest.split(" port ").nth(1))
+        .and_then(|port| port.trim().parse().ok())
+        .unwrap_or_else(|| panic!("{case}: no port in client.txt"));
     let mut sample = Sample {
         client: Vec::new(),
         server: Vec::new(),
+        port,
     };
     let mut rest = bytes.as_slice();
     while let [direction, a, b, c, d, tail @ ..] = rest {
