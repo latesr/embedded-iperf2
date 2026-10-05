@@ -196,7 +196,7 @@ Every field is big-endian. Each offset counts from the start of the message. [Th
 
 **P-10** A TCP server receives until the client closes, then closes. The test lasts from the first byte to the close.
 
-**P-11** A UDP server starts a test at a datagram of at least 40 bytes with a packet ID above 0. It reads 64-bit packet IDs when the first datagram's `flags` have 0x08000000 set, and 32-bit IDs otherwise. It reads no test header when `flags` are 0x36373839. While a test runs, it ignores datagrams from another address or port.
+**P-11** A UDP server starts a test at a datagram of at least 40 bytes with a packet ID above 0. It reads 64-bit packet IDs when the first datagram's `flags` have 0x08000000 set, and 32-bit IDs otherwise. It reads no test header when `flags` are 0x36373839.
 
 **P-12** A UDP server ends a test at a negative packet ID, and sends the server report of W-11. For each datagram that arrives within 250 ms of its last report, it sends the same report again, up to 9 reports.
 
@@ -231,6 +231,8 @@ Every field is big-endian. Each offset counts from the start of the message. [Th
 **D-4** The `embassy-net` driver uses IPv4. The core does not depend on the address family, and the `std` driver takes IPv4 and IPv6.
 
 **D-5** Each driver supplies the core's time from a monotonic clock in microseconds.
+
+**D-6** While a UDP test runs, a driver passes its server only the datagrams from the address and port that sent the test's first datagram.
 
 ## Security
 

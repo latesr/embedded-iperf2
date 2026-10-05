@@ -9,9 +9,12 @@ exclude_globs = [
     "xtask/src/fuzz.rs",
 ]
 
-# Every `|` in the wire module joins bits that do not overlap: flag constants, or a high word shifted past a low
-# word. `^` gives the same value there, so the mutant cannot change behaviour. A `|` of bits that can overlap would
-# need this rule narrowed.
+# Every `|` in the crate joins bits that do not overlap: flag constants, a header length shifted under `LEN_BIT`,
+# or a high word shifted past a low word. `^` gives the same value there, so the mutant cannot change behaviour.
+# A `|` of bits that can overlap would need this rule narrowed.
 exclude_re = [
-    'src/wire/.*: replace \| with \^',
+    'embedded-iperf2/src/.*: replace \| with \^',
+    # The reset at the end of a burst is what lets BurstReader::received read on. Without it, every pass of the
+    # loop reads 0 bytes, so the mutant can only loop for ever and no test can end it.
+    'replace == with != in BurstReader::received',
 ]
