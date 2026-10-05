@@ -67,8 +67,12 @@ impl TcpSender {
     pub(crate) fn poll(&mut self, now_us: u64, buffer: &mut [u8]) -> Next {
         let start = *self.start_us.get_or_insert(now_us);
         let left = match self.stop {
+            // A burst header states its length, so the last burst is sent whole (P-16).
             Stop::After(duration) if now_us.saturating_sub(start) >= duration => {
-                return Next::Finished;
+                match self.burst_left() {
+                    0 => return Next::Finished,
+                    left => left,
+                }
             }
             Stop::After(_) => u64::MAX,
             Stop::Bytes(total) if self.sent >= total => return Next::Finished,
@@ -88,6 +92,21 @@ impl TcpSender {
         let chunk = buffer.get_mut(..length).unwrap_or_default();
         self.build(chunk, now_us, start);
         Next::Send(length)
+    }
+
+    /// The bytes left of the burst under way, or 0 between bursts and for a stream without bursts.
+    fn burst_left(&self) -> u64 {
+        match self.content {
+            Content::Bursts(size) => {
+                let into = self.sent.checked_rem(u64::from(size)).unwrap_or_default();
+                if into == 0 {
+                    0
+                } else {
+                    u64::from(size).saturating_sub(into)
+                }
+            }
+            Content::Header(_) => 0,
+        }
     }
 
     /// Records that the caller wrote `count` bytes of the last chunk.

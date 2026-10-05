@@ -1,5 +1,9 @@
 //! The clock of one test: when it started, when each interval report is due, and the bytes at the last one.
+//!
+//! Every interval that ends during a test is reported, an empty one with no bytes, and the last part of an
+//! interval is reported before the final report, as a stock iperf prints them (P-19).
 
+use crate::counts::UdpReceiver;
 use crate::report::{Report, UdpCounts};
 use crate::wire::{ServerReport, Timestamp};
 
@@ -14,6 +18,8 @@ pub(crate) struct Meter {
     /// The end of the last interval reported, from the start of the test.
     reported_us: u64,
     reported_bytes: u64,
+    /// Intervals that ended with no bytes, after the last one reported, still to report.
+    empty: u64,
 }
 
 impl Meter {
@@ -44,31 +50,78 @@ impl Meter {
         )
     }
 
-    /// The interval report due at `now_us`, if one is. `bytes` is the total so far.
+    /// The interval report due at `now_us`, if one is. `bytes` is the total so far, and `udp` the receiver whose
+    /// counts the report holds.
+    ///
+    /// The first interval due holds every byte since the last report. The intervals after it that have also ended
+    /// are empty, because the bytes arrived after them.
     pub(crate) fn interval(
         &mut self,
         now_us: u64,
         bytes: u64,
-        udp: Option<UdpCounts>,
+        udp: Option<&mut UdpReceiver>,
     ) -> Option<Report> {
         let due = self.next_due()?;
         if now_us < due {
             return None;
         }
+        if self.empty > 0 {
+            return self.empty_interval(udp.is_some());
+        }
+        let interval = self.interval_us.unwrap_or_default();
         let start_us = self.reported_us;
-        self.reported_us = self
-            .reported_us
-            .saturating_add(self.interval_us.unwrap_or_default());
+        self.reported_us = self.reported_us.saturating_add(interval);
+        self.empty = now_us
+            .saturating_sub(due)
+            .checked_div(interval)
+            .unwrap_or_default();
         let report = Report {
             start_us,
             end_us: self.reported_us,
             bytes: bytes.saturating_sub(self.reported_bytes),
-            udp,
+            udp: udp.map(|counts| counts.interval().1),
             final_report: false,
             server: None,
         };
         self.reported_bytes = bytes;
         Some(report)
+    }
+
+    /// The next empty interval of a stall, if one is left to report. `udp` says whether it holds counts.
+    pub(crate) fn empty_interval(&mut self, udp: bool) -> Option<Report> {
+        if self.empty == 0 {
+            return None;
+        }
+        self.empty = self.empty.saturating_sub(1);
+        let start_us = self.reported_us;
+        self.reported_us = self
+            .reported_us
+            .saturating_add(self.interval_us.unwrap_or_default());
+        Some(Report {
+            start_us,
+            end_us: self.reported_us,
+            bytes: 0,
+            udp: udp.then(UdpCounts::default),
+            final_report: false,
+            server: None,
+        })
+    }
+
+    /// The last part of an interval, from the end of the intervals reported or still to report to `end_us` from
+    /// the start, when the test ended inside one. `bytes` is the total of the test.
+    pub(crate) fn tail(&self, end_us: u64, bytes: u64, udp: Option<UdpCounts>) -> Option<Report> {
+        let interval = self.interval_us?;
+        let start_us = self
+            .reported_us
+            .saturating_add(self.empty.saturating_mul(interval));
+        (end_us > start_us).then(|| Report {
+            start_us,
+            end_us,
+            bytes: bytes.saturating_sub(self.reported_bytes),
+            udp,
+            final_report: false,
+            server: None,
+        })
     }
 
     /// The final report of a test that ended at `now_us`, with `bytes` in all.
@@ -125,6 +178,9 @@ mod tests {
             (1_000, 2_000, 15)
         );
         assert!(!second.final_report);
+        let tail = meter.tail(2_500, 30, None).unwrap();
+        assert_eq!((tail.start_us, tail.end_us, tail.bytes), (2_000, 2_500, 5));
+        assert_eq!(meter.tail(2_000, 30, None), None);
         let last = meter.last(7_500, 30, None, None);
         assert_eq!(
             (last.start_us, last.end_us, last.bytes, last.final_report),
@@ -133,10 +189,30 @@ mod tests {
     }
 
     #[test]
+    fn the_intervals_of_a_stall_are_empty() {
+        let mut meter = Meter::new(Some(1_000));
+        meter.start(0);
+        let first = meter.interval(3_500, 10, None).unwrap();
+        assert_eq!((first.end_us, first.bytes), (1_000, 10));
+        assert_eq!(meter.tail(3_700, 12, None).unwrap().start_us, 3_000);
+        let second = meter.interval(3_500, 12, None).unwrap();
+        assert_eq!((second.end_us, second.bytes, second.udp), (2_000, 0, None));
+        let third = meter.empty_interval(true).unwrap();
+        assert_eq!(
+            (third.end_us, third.udp),
+            (3_000, Some(UdpCounts::default()))
+        );
+        assert_eq!(meter.empty_interval(true), None);
+        assert_eq!(meter.interval(3_999, 12, None), None);
+        assert_eq!(meter.interval(4_000, 12, None).unwrap().bytes, 2);
+    }
+
+    #[test]
     fn no_interval_means_no_interval_reports() {
         let mut meter = Meter::new(None);
         meter.start(0);
         assert_eq!(meter.interval(u64::MAX, 1, None), None);
+        assert_eq!(meter.tail(5, 1, None), None);
         let mut meter = Meter::new(Some(0));
         meter.start(0);
         assert_eq!(meter.interval(u64::MAX, 1, None), None);

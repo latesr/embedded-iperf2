@@ -773,6 +773,189 @@ fn the_stock_reverse_tcp_server_bytes_end_our_client_test() {
 }
 
 #[test]
+fn a_tcp_client_ends_with_its_report_when_the_server_closes_while_it_sends() {
+    let mut buffer = [0; 1000];
+    let config = Config {
+        length: Length::Time { us: 10_000_000 },
+        ..tcp_bytes(0)
+    };
+    let mut client = Client::new(config, &mut buffer).unwrap();
+    let first = send(client.poll(0));
+    client.sent(first.len());
+    client.closed(500);
+    let last = report(client.poll(500));
+    assert_eq!((last.bytes, last.final_report), (1000, true), "P-24");
+    assert_eq!(client.poll(500), Action::Done(Ok(())));
+}
+
+#[test]
+fn a_close_before_the_reverse_header_is_out_is_a_refusal() {
+    let mut buffer = [0; 10];
+    let config = Config {
+        reverse: true,
+        ..tcp_bytes(1000)
+    };
+    let mut client = Client::new(config, &mut buffer).unwrap();
+    let first = send(client.poll(0));
+    client.sent(first.len());
+    client.closed(10);
+    assert_eq!(
+        client.poll(10),
+        Action::Done(Err(TestError::Refused)),
+        "P-24"
+    );
+}
+
+#[test]
+fn reverse_udp_in_byte_mode_ends_10_s_after_the_last_datagram() {
+    let mut buffer = [0; 2000];
+    let config = Config {
+        reverse: true,
+        ..udp_bytes(5000)
+    };
+    let mut client = Client::new(config, &mut buffer).unwrap();
+    let ask = send(client.poll(0));
+    client.sent(ask.len());
+    client.received(100, &server_datagram(1, 0));
+    client.received(300, &server_datagram(2, 200));
+    assert_eq!(
+        client.poll(400),
+        Action::Wait {
+            until_us: Some(10_000_300)
+        }
+    );
+    let last = report(client.poll(10_000_300));
+    assert_eq!((last.bytes, last.final_report), (1024, true), "P-22");
+}
+
+#[test]
+fn reverse_tcp_in_byte_mode_ends_10_s_after_the_last_byte() {
+    let mut buffer = [0; 4096];
+    let config = Config {
+        reverse: true,
+        ..tcp_bytes(40_000)
+    };
+    let mut client = Client::new(config, &mut buffer).unwrap();
+    send_all(&mut client, 0);
+    client.received(700, &burst(1, 300));
+    assert_eq!(
+        client.poll(800),
+        Action::Wait {
+            until_us: Some(10_000_700)
+        }
+    );
+    assert_eq!(report(client.poll(10_000_700)).bytes, 300, "P-5");
+}
+
+#[test]
+fn reverse_udp_does_not_start_on_a_datagram_a_server_would_ignore() {
+    let mut buffer = [0; 2000];
+    let mut client = Client::new(reverse_udp_time(2_000_000), &mut buffer).unwrap();
+    let ask = send(client.poll(0));
+    client.sent(ask.len());
+    client.received(10, &server_datagram(1, 0)[..39]);
+    client.received(20, &server_datagram(0, 0));
+    assert_eq!(
+        client.poll(30),
+        Action::Wait {
+            until_us: Some(1_000_000)
+        },
+        "still asking (P-22, P-11)"
+    );
+}
+
+#[test]
+fn the_last_part_of_an_interval_is_reported_before_the_final_report() {
+    let mut buffer = [0; 2000];
+    let config = Config {
+        length: Length::Time { us: 2_500_000 },
+        interval_us: Some(1_000_000),
+        rate: 4_096_000,
+        ..udp_bytes(0)
+    };
+    let mut client = Client::new(config, &mut buffer).unwrap();
+    let driven = drive(&mut client, 0);
+    let spans: Vec<(u64, u64, u64, bool)> = driven
+        .reports
+        .iter()
+        .map(|r| (r.start_us, r.end_us, r.bytes, r.final_report))
+        .collect();
+    assert_eq!(
+        spans,
+        [
+            (0, 1_000_000, 1000 * 512, false),
+            (1_000_000, 2_000_000, 1000 * 512, false),
+            (2_000_000, 2_500_000, 500 * 512, false),
+            (0, 2_500_000, 2500 * 512, true)
+        ],
+        "P-19"
+    );
+}
+
+#[test]
+fn every_interval_of_a_stall_is_reported_empty() {
+    let mut buffer = [0; 2000];
+    let config = Config {
+        interval_us: Some(1_000_000),
+        ..reverse_udp_time(10_000_000)
+    };
+    let mut client = Client::new(config, &mut buffer).unwrap();
+    let ask = send(client.poll(0));
+    client.sent(ask.len());
+    client.received(0, &server_datagram(1, 0));
+    client.received(3_500_000, &server_datagram(2, 3_500_000));
+    let mut intervals = Vec::new();
+    for now in [3_500_000, 3_500_000, 3_500_000, 4_000_000] {
+        let interval = report(client.poll(now));
+        intervals.push((
+            interval.start_us,
+            interval.bytes,
+            interval.udp.unwrap().datagrams,
+        ));
+    }
+    assert_eq!(
+        intervals,
+        [
+            (0, 512, 1),
+            (1_000_000, 0, 0),
+            (2_000_000, 0, 0),
+            (3_000_000, 512, 1)
+        ],
+        "P-19"
+    );
+}
+
+#[test]
+fn a_reverse_udp_test_reports_the_counts_of_its_last_part() {
+    let mut buffer = [0; 2000];
+    let config = Config {
+        interval_us: Some(1_000_000),
+        ..reverse_udp_time(3_000_000)
+    };
+    let mut client = Client::new(config, &mut buffer).unwrap();
+    let ask = send(client.poll(0));
+    client.sent(ask.len());
+    client.received(0, &server_datagram(1, 0));
+    client.received(1_200_000, &server_datagram(3, 1_200_000));
+    client.received(1_400_000, &server_datagram(-4, 1_400_000));
+    let first = report(client.poll(1_400_000));
+    let tail = report(client.poll(1_400_000));
+    assert_eq!((first.end_us, first.bytes), (1_000_000, 512));
+    let udp = tail.udp.unwrap();
+    assert_eq!(
+        (
+            tail.start_us,
+            tail.end_us,
+            tail.bytes,
+            udp.datagrams,
+            udp.lost
+        ),
+        (1_000_000, 1_400_000, 1024, 3, 1)
+    );
+    assert!(report(client.poll(1_400_000)).final_report);
+}
+
+#[test]
 fn the_stock_reverse_udp_server_datagrams_count_without_loss() {
     let sample = common::read("udp-reverse");
     let mut buffer = [0; 2000];

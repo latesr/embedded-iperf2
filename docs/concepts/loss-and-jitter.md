@@ -1,6 +1,6 @@
 # Loss, out-of-order and jitter
 
-Covers: the counts a UDP receiver keeps from the packet IDs and send times of the datagrams it receives.
+Covers: the counts a UDP receiver keeps from the packet IDs and send times of the datagrams it receives, and `embedded-iperf2/src/counts.rs`, which keeps them.
 
 The receiver of a UDP test keeps the highest packet ID it has seen. Each datagram's ID and send time update three numbers. [The iperf 2.2.2 source](../summaries/iperf2-2.2.2.md#loss-out-of-order-and-jitter) states each rule.
 
@@ -21,5 +21,7 @@ Jitter follows RFC 1889, the RTP specification:
 3. From the second datagram on, the jitter `J` updates as `J = J + (D - J) / 16`.
 
 An out-of-order datagram does not update the transit time or the jitter. The sender's clock and the receiver's clock need not agree, because a constant offset between them cancels in `D`. The server report holds the mean of the running jitter values over the test, not the last value.
+
+`embedded-iperf2` keeps the jitter in integer nanoseconds, and keeps the last transit time across interval reports, as RFC 1889 does. A stock iperf keeps `double` seconds, and copies its transit statistics at each interval, so its first `D` of an interval may differ from ours. The counts do not depend on either.
 
 Requirements that use the term: W-11, P-17, P-18, P-19 and P-20.

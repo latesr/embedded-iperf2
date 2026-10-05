@@ -45,8 +45,12 @@ pub struct Server<'b> {
     now_us: u64,
     /// An interval that ended before bytes that arrived after it, for the next `poll`.
     pending: Option<Report>,
+    /// Once the test has ended: the last part of an interval, the final report and the outcome.
+    tail: Option<Report>,
     last: Option<Report>,
     outcome: Option<Result<(), TestError>>,
+    /// Whether the test that ended received UDP, so its empty intervals hold counts.
+    ended_udp: bool,
 }
 
 #[derive(Debug)]
@@ -127,15 +131,23 @@ impl<'b> Server<'b> {
             state,
             now_us: 0,
             pending: None,
+            tail: None,
             last: None,
             outcome: None,
+            ended_udp: false,
         })
     }
 
     /// What the caller does next, at `now_us`.
     pub fn poll(&mut self, now_us: u64) -> Action<'_> {
         self.now_us = now_us;
-        if let Some(report) = self.pending.take().or_else(|| self.last.take()) {
+        if let Some(report) = self.pending.take() {
+            return Action::Report(report);
+        }
+        if let Some(report) = self.interval(now_us) {
+            return Action::Report(report);
+        }
+        if let Some(report) = self.tail.take().or_else(|| self.last.take()) {
             return Action::Report(report);
         }
         if let Some(outcome) = self.outcome {
@@ -143,9 +155,6 @@ impl<'b> Server<'b> {
         }
         if self.over_time(now_us) {
             return self.poll(now_us);
-        }
-        if let Some(report) = self.interval(now_us) {
-            return Action::Report(report);
         }
         let deadline = self.deadline();
         let next_due = self.meter.next_due();
@@ -188,7 +197,7 @@ impl<'b> Server<'b> {
                     *close = false;
                     return Action::Close;
                 }
-                Action::Wait { until_us: None }
+                wait(None)
             }
             State::UdpReporting {
                 server,
@@ -296,7 +305,12 @@ impl<'b> Server<'b> {
                 let len = *len;
                 self.read_header(&stash, len, rest);
             }
-            State::TcpReceiving { bytes: count } => {
+            State::TcpReceiving { bytes: count }
+            | State::TcpAck {
+                bytes: count,
+                reverse: None,
+                ..
+            } => {
                 *count = count.saturating_add(bytes.len() as u64);
             }
             State::UdpWaiting => self.first_datagram(now_us, bytes),
@@ -333,21 +347,32 @@ impl<'b> Server<'b> {
 
     /// Records that the client closed the TCP connection.
     pub fn closed(&mut self, now_us: u64) {
-        match &self.state {
-            State::TcpReceiving { bytes } => {
-                let report = self.meter.last(now_us, *bytes, None, None);
-                self.finish(report);
-            }
-            State::TcpClosing { report, .. } => {
-                let report = *report;
-                self.finish(report);
-            }
-            State::TcpHeader { .. } | State::TcpAck { .. } | State::TcpSending(_) => {
-                self.outcome = Some(Err(TestError::Protocol));
-                self.state = State::Over;
-            }
-            _ => {}
+        if let State::TcpHeader { .. } = self.state {
+            self.outcome = Some(Err(TestError::Protocol));
+            self.state = State::Over;
+            return;
         }
+        // A client may close as soon as it has sent or received its bytes, before the ack or the last chunk is
+        // out, so the test ends with what moved (P-10, P-16).
+        self.end_tcp(now_us);
+    }
+
+    /// Ends a TCP test at `now_us` with the bytes it moved. Returns whether the state was a TCP test's.
+    fn end_tcp(&mut self, now_us: u64) -> bool {
+        let report = match &self.state {
+            State::TcpClosing { report, .. } => *report,
+            State::TcpHeader { len, .. } => self.meter.last(now_us, *len as u64, None, None),
+            State::TcpAck {
+                reverse: Some(_), ..
+            } => self.meter.last(now_us, 0, None, None),
+            State::TcpAck { bytes, .. } | State::TcpReceiving { bytes } => {
+                self.meter.last(now_us, *bytes, None, None)
+            }
+            State::TcpSending(sender) => self.meter.last(now_us, sender.sent_bytes(), None, None),
+            _ => return false,
+        };
+        self.finish(report);
+        true
     }
 
     /// Reads the TCP test header from the first `len` bytes of `stash`, once they hold it. `rest` bytes arrived
@@ -388,7 +413,7 @@ impl<'b> Server<'b> {
             )
         });
         // P-9 acks EXTEND without VERSION2. A header that P-13 lets through has EXTEND or VERSION2, so EXTEND
-        // needs no check of its own.
+        // does not need a check of its own.
         let acked = header_flags & flags::VERSION2 == 0 || header_flags & flags::V2PEERDETECT != 0;
         self.state = match (acked, reverse) {
             (true, reverse) => State::TcpAck {
@@ -463,12 +488,16 @@ impl<'b> Server<'b> {
     fn report(&mut self, now_us: u64) {
         let State::UdpReceiving {
             counts, last_us, ..
-        } = &self.state
+        } = &mut self.state
         else {
             return;
         };
         let total = counts.total();
         let report = self.meter.last(*last_us, counts.bytes(), Some(total), None);
+        self.tail = self
+            .meter
+            .tail(report.end_us, report.bytes, Some(counts.interval().1));
+        self.ended_udp = true;
         let server = ServerReport {
             bytes: counts.bytes(),
             duration: timestamp(report.end_us),
@@ -490,11 +519,12 @@ impl<'b> Server<'b> {
     fn deadline(&self) -> Option<u64> {
         let duration = self.config.duration_us?;
         match self.state {
-            State::TcpReceiving { .. }
-            | State::UdpReceiving { .. }
-            | State::TcpSending(_)
-            | State::UdpSending(_) => Some(self.meter.start_us()?.saturating_add(duration)),
-            _ => None,
+            // These end on their own, within 250 ms, or at once.
+            State::UdpWaiting
+            | State::UdpReporting { .. }
+            | State::UdpEnding { .. }
+            | State::Over => None,
+            _ => Some(self.meter.start_us()?.saturating_add(duration)),
         }
     }
 
@@ -503,18 +533,10 @@ impl<'b> Server<'b> {
         if self.deadline().is_none_or(|deadline| now_us < deadline) {
             return false;
         }
+        if self.end_tcp(now_us) {
+            return true;
+        }
         match core::mem::replace(&mut self.state, State::Over) {
-            State::TcpReceiving { bytes } => {
-                let report = self.meter.last(now_us, bytes, None, None);
-                self.finish(report);
-            }
-            State::TcpSending(sender) => {
-                let report = self.meter.last(now_us, sender.sent_bytes(), None, None);
-                self.state = State::TcpClosing {
-                    report,
-                    close: true,
-                };
-            }
             State::UdpSending(sender) => {
                 let report = self.meter.last(now_us, sender.sent_bytes(), None, None);
                 self.state = State::UdpEnding { sender, report };
@@ -527,7 +549,7 @@ impl<'b> Server<'b> {
         true
     }
 
-    /// The interval report due at `now_us`, while the test moves data.
+    /// The interval report due at `now_us`: of the data the test moves, or an empty one left after it ended.
     fn interval(&mut self, now_us: u64) -> Option<Report> {
         let due = self.meter.next_due()?;
         if now_us < due {
@@ -539,10 +561,9 @@ impl<'b> Server<'b> {
             State::UdpSending(sender) => self.meter.interval(now_us, sender.sent_bytes(), None),
             State::UdpReceiving { counts, .. } => {
                 let bytes = counts.bytes();
-                let (_, udp) = counts.interval();
-                self.meter.interval(now_us, bytes, Some(udp))
+                self.meter.interval(now_us, bytes, Some(counts))
             }
-            _ => None,
+            _ => self.meter.empty_interval(self.ended_udp),
         }
     }
 
@@ -566,7 +587,12 @@ impl<'b> Server<'b> {
         self.state = State::Over;
     }
 
+    /// Ends the test with `report` as its final report, after the last part of an interval. A forward UDP test
+    /// found its last part when it stopped receiving.
     fn finish(&mut self, report: Report) {
+        if !self.ended_udp {
+            self.tail = self.meter.tail(report.end_us, report.bytes, None);
+        }
         self.last = Some(report);
         self.outcome = Some(Ok(()));
         self.state = State::Over;

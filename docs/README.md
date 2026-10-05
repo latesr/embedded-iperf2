@@ -10,4 +10,5 @@ Covers: the index of every page under `docs/`.
 | [End of a UDP test](concepts/udp-end-of-test.md) | Concept | The negative packet ID that ends a UDP test, and the server report that answers it |
 | [Loss, out-of-order and jitter](concepts/loss-and-jitter.md) | Concept | How a UDP receiver counts from the packet IDs and send times |
 | [ADR-0001: The wire module reads the bytes and leaves the rules to the protocol](decisions/0001-wire-format.md) | ADR | Raw flag words, the `-C` fill in `header_length`, and zeros in the server report's transit statistics |
+| [ADR-0002: One sans-I/O client and one sans-I/O server, driven by `poll`](decisions/0002-state-machines.md) | ADR | The shape of `Client` and `Server`, who keeps the UDP peer, integer jitter, and how events in any order end a test |
 | [Findings not yet fixed](todo.md) | Findings | What a piece of work saw and did not fix, with the commit that found it |

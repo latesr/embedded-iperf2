@@ -95,10 +95,10 @@ pub enum ConfigError {
 /// Why a test ended without a final report.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TestError {
-    /// The server refused the test, because it asks for a mode outside v1 (P-13).
+    /// The server refused the test, because it asks for a mode outside v1 (P-13). A close before a reverse test's
+    /// header is out is a refusal too, as P-24 states.
     Refused,
-    /// The client of a reverse UDP test received no data within 10 s (P-6), or the client of a reverse TCP test
-    /// saw the connection close before any data.
+    /// The client of a reverse UDP test received no data within 10 s (P-6).
     NoData,
     /// The peer sent bytes that break the protocol, such as a burst header shorter than itself (P-5).
     Protocol,

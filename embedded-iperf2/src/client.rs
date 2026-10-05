@@ -16,9 +16,12 @@ const GRACE_US: u64 = 2 * SECOND_US;
 /// The wait for a server report between two ends of a UDP test, and the most ends sent (P-3).
 const END_WAIT_US: u64 = 10_000;
 const END_SENDS: u32 = 200;
-/// How often a reverse UDP client asks again, and how long it waits for data (P-6).
+/// How often a reverse UDP client asks again, and how long a reverse test waits for data. P-6 waits for the first
+/// datagram. P-5 and P-22 wait for the next bytes in byte mode.
 const ASK_EVERY_US: u64 = SECOND_US;
 const NO_DATA_US: u64 = 10 * SECOND_US;
+/// The shortest datagram that starts a test at a server, and so at a reverse test's client (P-11, P-22).
+const MIN_FIRST_DATAGRAM: usize = 40;
 /// The version a 2.2.2 client writes.
 const VERSION_U: u32 = 0x0002_0002;
 const VERSION_L: u32 = 0x0002_0003;
@@ -34,9 +37,12 @@ pub struct Client<'b> {
     now_us: u64,
     /// An interval that ended before bytes that arrived after it, for the next `poll`.
     pending: Option<Report>,
-    /// The final report, once the test has ended, and then the outcome.
+    /// Once the test has ended: the last part of an interval, the final report and the outcome.
+    tail: Option<Report>,
     last: Option<Report>,
     outcome: Option<Result<(), TestError>>,
+    /// Whether the test that ended received UDP, so its empty intervals hold counts.
+    ended_udp: bool,
 }
 
 #[derive(Debug)]
@@ -129,22 +135,27 @@ impl<'b> Client<'b> {
             state,
             now_us: 0,
             pending: None,
+            tail: None,
             last: None,
             outcome: None,
+            ended_udp: false,
         })
     }
 
     /// What the caller does next, at `now_us`.
     pub fn poll(&mut self, now_us: u64) -> Action<'_> {
         self.now_us = now_us;
-        if let Some(report) = self.pending.take().or_else(|| self.last.take()) {
+        if let Some(report) = self.pending.take() {
+            return Action::Report(report);
+        }
+        if let Some(report) = self.interval(now_us) {
+            return Action::Report(report);
+        }
+        if let Some(report) = self.tail.take().or_else(|| self.last.take()) {
             return Action::Report(report);
         }
         if let Some(outcome) = self.outcome {
             return Action::Done(outcome);
-        }
-        if let Some(report) = self.interval(now_us) {
-            return Action::Report(report);
         }
         let next_due = self.meter.next_due();
         let wait = |until: Option<u64>| Action::Wait {
@@ -318,18 +329,20 @@ impl<'b> Client<'b> {
             self.pending = self.interval(now_us);
         }
         match &mut self.state {
-            State::TcpReceiving { reader, .. } => {
+            State::TcpReceiving { reader, until_us } => {
                 self.meter.start(now_us);
                 if let Err(error) = reader.received(bytes) {
                     self.outcome = Some(Err(error));
                     self.state = State::Over;
                     return;
                 }
-                if let Length::Bytes(total) = self.config.length
-                    && reader.bytes() >= total
-                {
-                    let report = self.meter.last(now_us, reader.bytes(), None, None);
-                    self.finish(report);
+                if let Length::Bytes(total) = self.config.length {
+                    // A lost close must not hold a test in byte mode for ever (P-5).
+                    *until_us = Some(now_us.saturating_add(NO_DATA_US));
+                    if reader.bytes() >= total {
+                        let report = self.meter.last(now_us, reader.bytes(), None, None);
+                        self.finish(report);
+                    }
                 }
             }
             State::UdpEnding { report, .. } => {
@@ -342,6 +355,12 @@ impl<'b> Client<'b> {
                 }
             }
             State::UdpAsking { .. } => {
+                // The first datagram must be one a server would start a test at (P-22, P-11).
+                let starts = bytes.len() >= MIN_FIRST_DATAGRAM
+                    && Prefix::parse(bytes).is_ok_and(|prefix| prefix.packet_id_32() > 0);
+                if !starts {
+                    return;
+                }
                 let until_us = match self.config.length {
                     Length::Time { us } => Some(now_us.saturating_add(us).saturating_add(GRACE_US)),
                     Length::Bytes(_) => None,
@@ -354,13 +373,19 @@ impl<'b> Client<'b> {
                 self.received(now_us, bytes);
             }
             State::UdpReceiving {
-                counts, last_us, ..
+                counts,
+                last_us,
+                until_us,
             } => {
                 let Ok(prefix) = Prefix::parse(bytes) else {
                     return;
                 };
                 self.meter.start(now_us);
                 *last_us = now_us;
+                if let Length::Bytes(_) = self.config.length {
+                    // A lost end of the test must not hold a test in byte mode for ever (P-22).
+                    *until_us = Some(now_us.saturating_add(NO_DATA_US));
+                }
                 let id = i64::from(prefix.packet_id_32());
                 counts.datagram(id.saturating_abs(), prefix.sent, now_us, bytes.len());
                 if id < 0 {
@@ -385,11 +410,20 @@ impl<'b> Client<'b> {
                 let report = self.meter.last(now_us, reader.bytes(), None, None);
                 self.finish(report);
             }
+            // The server ended the test, at its own duration or because it refused it (P-24).
+            State::TcpSending(sender) => {
+                let report = self.meter.last(now_us, sender.sent_bytes(), None, None);
+                self.finish(report);
+            }
+            State::TcpAsking(_) => {
+                self.outcome = Some(Err(TestError::Refused));
+                self.state = State::Over;
+            }
             _ => {}
         }
     }
 
-    /// The interval report due at `now_us`, while the test moves data.
+    /// The interval report due at `now_us`: of the data the test moves, or an empty one left after it ended.
     fn interval(&mut self, now_us: u64) -> Option<Report> {
         let due = self.meter.next_due()?;
         if now_us < due {
@@ -401,10 +435,9 @@ impl<'b> Client<'b> {
             State::TcpReceiving { reader, .. } => self.meter.interval(now_us, reader.bytes(), None),
             State::UdpReceiving { counts, .. } => {
                 let bytes = counts.bytes();
-                let (_, udp) = counts.interval();
-                self.meter.interval(now_us, bytes, Some(udp))
+                self.meter.interval(now_us, bytes, Some(counts))
             }
-            _ => None,
+            _ => self.meter.empty_interval(self.ended_udp),
         }
     }
 
@@ -420,8 +453,14 @@ impl<'b> Client<'b> {
         };
     }
 
-    /// Ends the test with `report` as its final report.
+    /// Ends the test with `report` as its final report, after the last part of an interval.
     fn finish(&mut self, report: Report) {
+        let udp = match &mut self.state {
+            State::UdpReceiving { counts, .. } => Some(counts.interval().1),
+            _ => None,
+        };
+        self.ended_udp = udp.is_some();
+        self.tail = self.meter.tail(report.end_us, report.bytes, udp);
         self.last = Some(report);
         self.outcome = Some(Ok(()));
         self.state = State::Over;

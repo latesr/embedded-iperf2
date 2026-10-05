@@ -429,7 +429,9 @@ fn the_server_duration_caps_a_reverse_test() {
     };
     server.received(0, &encode(&header));
     send_all(&mut server, 0);
-    assert_eq!(server.poll(1_000_000), Action::Close, "P-15");
+    let last = report(server.poll(1_000_000));
+    assert_eq!((last.end_us, last.final_report), (1_000_000, true), "P-15");
+    assert_eq!(server.poll(1_000_000), Action::Done(Ok(())));
 }
 
 #[test]
@@ -812,6 +814,142 @@ fn a_receiving_server_reports_each_interval() {
     let udp = interval.udp.unwrap();
     assert_eq!((udp.datagrams, udp.lost), (3, 1));
     assert!(!interval.final_report);
+}
+
+#[test]
+fn tcp_counts_the_bytes_that_arrive_before_the_ack_is_out() {
+    let mut buffer = [0; 2048];
+    let mut server = Server::new(tcp(), &mut buffer).unwrap();
+    server.received(0, &encode(&tcp_header()));
+    server.received(1, &[b'0'; 1000]);
+    send_all(&mut server, 2);
+    server.closed(3);
+    assert_eq!(report(server.poll(3)).bytes, 1064);
+}
+
+#[test]
+fn a_close_before_the_ack_is_out_ends_the_test_with_its_bytes() {
+    let mut buffer = [0; 2048];
+    let mut server = Server::new(tcp(), &mut buffer).unwrap();
+    server.received(0, &[encode(&tcp_header()), vec![b'0'; 36]].concat());
+    server.closed(5);
+    assert_eq!(report(server.poll(5)).bytes, 100, "P-10");
+    assert_eq!(server.poll(5), Action::Done(Ok(())));
+}
+
+#[test]
+fn a_close_while_a_reverse_test_sends_ends_it_with_the_bytes_sent() {
+    let mut buffer = [0; 5000];
+    let mut server = Server::new(tcp(), &mut buffer).unwrap();
+    server.received(0, &encode(&reverse_tcp_header()));
+    let first = send(server.poll(0));
+    server.sent(first.len());
+    server.closed(10);
+    let last = report(server.poll(10));
+    assert_eq!((last.bytes, last.final_report), (5000, true), "P-16");
+    assert_eq!(server.poll(10), Action::Done(Ok(())));
+}
+
+#[test]
+fn a_close_before_the_ack_of_a_reverse_test_reports_nothing_sent() {
+    let mut buffer = [0; 5000];
+    let mut server = Server::new(tcp(), &mut buffer).unwrap();
+    let header = TestHeader {
+        flags: 0x4601_0080,
+        ..reverse_tcp_header()
+    };
+    server.received(0, &encode(&header));
+    server.closed(5);
+    assert_eq!(report(server.poll(5)).bytes, 0, "the server is the sender");
+}
+
+#[test]
+fn the_server_duration_ends_a_test_stalled_in_its_header() {
+    let mut buffer = [0; 2048];
+    let config = ServerConfig {
+        duration_us: Some(1_000_000),
+        ..tcp()
+    };
+    let mut server = Server::new(config, &mut buffer).unwrap();
+    server.received(0, &encode(&tcp_header())[..30]);
+    assert_eq!(
+        server.poll(0),
+        Action::Wait {
+            until_us: Some(1_000_000)
+        }
+    );
+    let last = report(server.poll(1_000_000));
+    assert_eq!(last.bytes, 30, "P-15");
+    assert_eq!(server.poll(1_000_000), Action::Done(Ok(())));
+}
+
+#[test]
+fn the_server_duration_ends_a_reverse_test_whose_client_never_closes() {
+    let mut buffer = [0; 5000];
+    let config = ServerConfig {
+        duration_us: Some(1_000_000),
+        ..tcp()
+    };
+    let mut server = Server::new(config, &mut buffer).unwrap();
+    let header = TestHeader {
+        amount: Amount::Bytes(5000),
+        ..reverse_tcp_header()
+    };
+    server.received(0, &encode(&header));
+    let (_, next) = send_all(&mut server, 0);
+    assert_eq!(next, "Close");
+    assert_eq!(
+        server.poll(0),
+        Action::Wait {
+            until_us: Some(1_000_000)
+        }
+    );
+    assert_eq!(report(server.poll(1_000_000)).bytes, 5000, "P-15");
+}
+
+#[test]
+fn a_time_mode_reverse_test_finishes_its_last_burst() {
+    let mut buffer = [0; 120];
+    let header = TestHeader {
+        buf_len: 1000,
+        amount: Amount::Time { centiseconds: 100 },
+        ..reverse_tcp_header()
+    };
+    let mut server = Server::new(tcp(), &mut buffer).unwrap();
+    server.received(0, &encode(&header));
+    let first = send(server.poll(0));
+    server.sent(first.len());
+    let (rest, next) = send_all(&mut server, 1_000_000);
+    assert_eq!(rest.len(), 880, "the burst stated 1000 bytes (P-16)");
+    assert_eq!(next, "Close");
+}
+
+#[test]
+fn a_udp_server_reports_the_last_part_of_an_interval() {
+    let mut buffer = [0; 2048];
+    let config = ServerConfig {
+        interval_us: Some(1_000_000),
+        ..udp()
+    };
+    let mut server = Server::new(config, &mut buffer).unwrap();
+    server.received(0, &udp_datagram(1, 0, Some(&udp_header()), 512));
+    server.received(1_500_000, &udp_datagram(2, 0, Some(&udp_header()), 512));
+    server.received(1_700_000, &udp_datagram(-3, 0, Some(&udp_header()), 512));
+    let driven = drive(&mut server, 1_700_000, None);
+    let spans: Vec<(u64, u64, u64, u64)> = driven
+        .reports
+        .iter()
+        .map(|r| (r.start_us, r.end_us, r.bytes, r.udp.unwrap().datagrams))
+        .collect();
+    assert_eq!(
+        spans,
+        [
+            (0, 1_000_000, 512, 1),
+            (1_000_000, 1_700_000, 1024, 2),
+            (0, 1_700_000, 1536, 3)
+        ],
+        "P-19"
+    );
 }
 
 #[test]
