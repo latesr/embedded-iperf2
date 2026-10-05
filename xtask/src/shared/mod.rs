@@ -3,6 +3,7 @@
 //! The commands every repo shares. A repo's `main.rs` flattens [`Command`] into its own commands.
 
 mod adrs;
+pub mod checks;
 pub(crate) mod files;
 pub(crate) mod hooks;
 mod ids;
