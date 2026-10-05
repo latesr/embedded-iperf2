@@ -26,6 +26,14 @@ jobs:
         run: rustup toolchain install 1.91 --profile minimal
       - uses: taiki-e/install-action@cargo-hack
       - uses: Swatinem/rust-cache@v2
+      # The interoperability tests run a stock iperf 2.2.2, which no package manager has. The key names the pin, so
+      # a new pin builds it again.
+      - uses: actions/cache@v4
+        with:
+          path: ~/.local/opt/iperf/2.2.2
+          key: iperf-2.2.2-74d4b553
+      - run: cargo xtask install-iperf
+      - run: echo "MCU_IPERF2=$HOME/.local/opt/iperf/2.2.2/iperf" >> "$GITHUB_ENV"
       - run: cargo xtask check
       - uses: taiki-e/install-action@v2
         with:

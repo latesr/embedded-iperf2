@@ -3,6 +3,7 @@
 
 pub mod sample;
 
+use crate::iperf::{self, VERSION};
 use sample::Direction;
 use std::io::{ErrorKind, Read, Write};
 use std::net::{Shutdown, SocketAddr, TcpListener, TcpStream, UdpSocket};
@@ -12,9 +13,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
-
-/// The version the samples come from. `MCU_IPERF2` must name a binary that reports it.
-const VERSION: &str = "2.2.2";
 
 /// One recorded case: its file name, whether it runs over UDP, and the client's arguments after `-c` and `-p`.
 struct Case {
@@ -66,11 +64,8 @@ const UDP_POLL: Duration = Duration::from_millis(100);
 /// Records every case, or only the cases named in `only`, into the crate's `tests/samples/<version>/`.
 pub fn run(root: &Path, only: &[String]) -> Result<(), String> {
     let binary = std::env::var("MCU_IPERF2")
-        .map_err(|_| "MCU_IPERF2 must name an iperf 2.2.2 binary".to_owned())?;
-    let version = version_line(&binary)?;
-    if !version.starts_with(&format!("iperf {VERSION} ")) {
-        return Err(format!("{binary} reports `{version}`, not {VERSION}"));
-    }
+        .map_err(|_| format!("MCU_IPERF2 must name an iperf {VERSION} binary, which `cargo xtask install-iperf` builds"))?;
+    let version = iperf::check_version(Path::new(&binary))?;
     if let Some(unknown) = only
         .iter()
         .find(|name| !CASES.iter().any(|case| case.name == name.as_str()))
@@ -120,20 +115,6 @@ fn index(version: &str) -> String {
         ));
     }
     text
-}
-
-/// The first line that `binary -v` prints. iperf 2 prints it on standard error.
-fn version_line(binary: &str) -> Result<String, String> {
-    let output = Command::new(binary)
-        .arg("-v")
-        .output()
-        .map_err(|error| format!("{binary}: {error}"))?;
-    let text = [output.stdout, output.stderr].concat();
-    Ok(String::from_utf8_lossy(&text)
-        .lines()
-        .next()
-        .unwrap_or_default()
-        .to_owned())
 }
 
 struct Recording {

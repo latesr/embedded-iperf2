@@ -14,7 +14,7 @@ Read in the iperf2 repository on 2026-10-05:
 - SourceForge publishes `iperf-2.2.2-SHA256SUMS.txt`, which names `iperf-2.2.2.tar.gz`. The tarball itself was not on SourceForge on 2026-10-05.
 - The 2.2.1 tarball matches the MD5 that SourceForge publishes. Its 61 files in `src/` and `include/` match commit `5fe98129` on the branch `2-2-1` byte for byte.
 
-A stock iperf here is built from the repository at the pin with `./configure && make`. Homebrew's `iperf` was 2.2.1 on 2026-10-05.
+A stock iperf here is built from the repository at the pin with `./configure && make`. `cargo xtask install-iperf` does the build, into `~/.local/opt/iperf/2.2.2/iperf`. Homebrew's `iperf` was 2.2.1 on 2026-10-05.
 
 ## 2.2.2
 

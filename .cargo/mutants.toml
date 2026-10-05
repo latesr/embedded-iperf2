@@ -6,6 +6,7 @@ exclude_globs = [
     "xtask/src/shared/hooks.rs",
     "xtask/src/shared/mutants.rs",
     "xtask/src/record/mod.rs",
+    "xtask/src/iperf.rs",
     "xtask/src/fuzz.rs",
 ]
 

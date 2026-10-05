@@ -2,6 +2,7 @@
 
 mod check;
 mod fuzz;
+mod iperf;
 mod record;
 mod shared;
 
@@ -24,6 +25,8 @@ enum Command {
         /// Record only these cases. Every case is recorded when none is named.
         only: Vec<String>,
     },
+    /// Build iperf 2.2.2 at the pinned commit into ~/.local/opt/iperf/2.2.2/iperf, for MCU_IPERF2.
+    InstallIperf,
     /// Run the parser fuzz target on nightly, seeded with the samples.
     Fuzz {
         /// How long to fuzz for.
@@ -40,6 +43,7 @@ fn main() {
     let result = match cli.command {
         Command::Check => check::run(&root),
         Command::Record { only } => record::run(&root, &only),
+        Command::InstallIperf => iperf::install(),
         Command::Fuzz { seconds } => fuzz::run(&root, seconds),
         Command::Shared(command) => shared::run(&root, command),
     };
