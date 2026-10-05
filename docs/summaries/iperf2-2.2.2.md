@@ -15,7 +15,6 @@ Each claim links the file and line it comes from. The [iperf2](../entities/iperf
 - The default `-t` is 10 s ([`src/Settings.cpp:417`](https://sourceforge.net/p/iperf2/code/ci/74d4b55321b9e7827c6567f3e48ae024ba3417c8/tree/src/Settings.cpp#l417)).
 - The default UDP rate is 1048576 bit/s ([`src/Settings.cpp:374`](https://sourceforge.net/p/iperf2/code/ci/74d4b55321b9e7827c6567f3e48ae024ba3417c8/tree/src/Settings.cpp#l374)).
 - TCP has no rate limit by default ([`src/Settings.cpp:2014`](https://sourceforge.net/p/iperf2/code/ci/74d4b55321b9e7827c6567f3e48ae024ba3417c8/tree/src/Settings.cpp#l2014)).
-- The suffixes `K`, `M` and `G` are powers of 1024, and `k`, `m` and `g` are powers of 1000 ([`src/stdio.c:134`](https://sourceforge.net/p/iperf2/code/ci/74d4b55321b9e7827c6567f3e48ae024ba3417c8/tree/src/stdio.c#l134)).
 - `-i` sets a local report interval, and no header field holds it ([`include/payloads.h:294`](https://sourceforge.net/p/iperf2/code/ci/74d4b55321b9e7827c6567f3e48ae024ba3417c8/tree/include/payloads.h#l294)).
 
 ## The UDP prefix
@@ -92,7 +91,8 @@ Each claim links the file and line it comes from. The [iperf2](../entities/iperf
 - The server counts the header bytes as the first bytes of the test ([`src/Listener.cpp:2071`](https://sourceforge.net/p/iperf2/code/ci/74d4b55321b9e7827c6567f3e48ae024ba3417c8/tree/src/Listener.cpp#l2071)).
 - With `HEADER_VERSION2` and `HEADER_REVERSE`, the server sends the data ([`src/Listener.cpp:2229`](https://sourceforge.net/p/iperf2/code/ci/74d4b55321b9e7827c6567f3e48ae024ba3417c8/tree/src/Listener.cpp#l2229)).
 - With flags of 0, the server reads no header and sends no header ack ([`src/Listener.cpp:2264`](https://sourceforge.net/p/iperf2/code/ci/74d4b55321b9e7827c6567f3e48ae024ba3417c8/tree/src/Listener.cpp#l2264)).
-- Without a header, the 4 bytes read as `flags` are not counted in the total ([`src/Listener.cpp:2043`](https://sourceforge.net/p/iperf2/code/ci/74d4b55321b9e7827c6567f3e48ae024ba3417c8/tree/src/Listener.cpp#l2043)).
+- The server sets `firstreadbytes` only when it reads a header ([`src/Listener.cpp:2071`](https://sourceforge.net/p/iperf2/code/ci/74d4b55321b9e7827c6567f3e48ae024ba3417c8/tree/src/Listener.cpp#l2071)).
+- The server counts `firstreadbytes` before its read loop, so without a header the 4 bytes read as `flags` are not counted ([`src/Server.cpp:1170`](https://sourceforge.net/p/iperf2/code/ci/74d4b55321b9e7827c6567f3e48ae024ba3417c8/tree/src/Server.cpp#l1170)).
 - The server's TCP read loop ends when the client closes ([`src/Server.cpp:472`](https://sourceforge.net/p/iperf2/code/ci/74d4b55321b9e7827c6567f3e48ae024ba3417c8/tree/src/Server.cpp#l472)).
 
 ## The header ack
@@ -115,7 +115,7 @@ Each claim links the file and line it comes from. The [iperf2](../entities/iperf
 - The server refuses a first datagram shorter than 40 bytes ([`src/Listener.cpp:1391`](https://sourceforge.net/p/iperf2/code/ci/74d4b55321b9e7827c6567f3e48ae024ba3417c8/tree/src/Listener.cpp#l1391)).
 - The server reads no header when `flags` are the `-C` fill 0x36373839 ([`src/Listener.cpp:1402`](https://sourceforge.net/p/iperf2/code/ci/74d4b55321b9e7827c6567f3e48ae024ba3417c8/tree/src/Listener.cpp#l1402)).
 - The server reads the header fields only when `HEADER_VERSION1`, `HEADER_VERSION2` or `HEADER_EXTEND` is set ([`src/Listener.cpp:1455`](https://sourceforge.net/p/iperf2/code/ci/74d4b55321b9e7827c6567f3e48ae024ba3417c8/tree/src/Listener.cpp#l1455)).
-- The server reads `upperflags` only when `HEADER_UDPTESTS` is also set ([`src/Listener.cpp:1546`](https://sourceforge.net/p/iperf2/code/ci/74d4b55321b9e7827c6567f3e48ae024ba3417c8/tree/src/Listener.cpp#l1546)).
+- The server reads `upperflags` and `lowerflags` when `HEADER_EXTEND` is set ([`src/Listener.cpp:1540`](https://sourceforge.net/p/iperf2/code/ci/74d4b55321b9e7827c6567f3e48ae024ba3417c8/tree/src/Listener.cpp#l1540)).
 - With `HEADER_VERSION2` and `HEADER_REVERSE`, the server sends the data ([`src/Listener.cpp:1646`](https://sourceforge.net/p/iperf2/code/ci/74d4b55321b9e7827c6567f3e48ae024ba3417c8/tree/src/Listener.cpp#l1646)).
 - The first datagram counts toward the server's totals ([`src/Listener.cpp:1115`](https://sourceforge.net/p/iperf2/code/ci/74d4b55321b9e7827c6567f3e48ae024ba3417c8/tree/src/Listener.cpp#l1115)).
 - The server ignores datagrams from a source port other than the flow's ([`src/Server.cpp:1221`](https://sourceforge.net/p/iperf2/code/ci/74d4b55321b9e7827c6567f3e48ae024ba3417c8/tree/src/Server.cpp#l1221)).
@@ -130,12 +130,13 @@ Each claim links the file and line it comes from. The [iperf2](../entities/iperf
 - A UDP client sends that datagram again each second until data arrives or 10 s pass ([`src/Client.cpp:260`](https://sourceforge.net/p/iperf2/code/ci/74d4b55321b9e7827c6567f3e48ae024ba3417c8/tree/src/Client.cpp#l260)).
 - The server sends on the accepted TCP connection, or to the UDP address the flow came from ([`src/Listener.cpp:1090`](https://sourceforge.net/p/iperf2/code/ci/74d4b55321b9e7827c6567f3e48ae024ba3417c8/tree/src/Listener.cpp#l1090)).
 - The server takes `-l` from `mBufLen` when it is not 0 ([`src/Settings.cpp:3091`](https://sourceforge.net/p/iperf2/code/ci/74d4b55321b9e7827c6567f3e48ae024ba3417c8/tree/src/Settings.cpp#l3091)).
-- Otherwise a UDP server sends 1470 bytes over IPv4 or 1450 over IPv6 ([`src/Settings.cpp:3192`](https://sourceforge.net/p/iperf2/code/ci/74d4b55321b9e7827c6567f3e48ae024ba3417c8/tree/src/Settings.cpp#l3192)).
+- The server ignores an `mBufLen` of 0 or below, or above 16 MiB ([`src/Settings.cpp:3102`](https://sourceforge.net/p/iperf2/code/ci/74d4b55321b9e7827c6567f3e48ae024ba3417c8/tree/src/Settings.cpp#l3102)).
+- A UDP server cuts its datagram length to 1470 bytes over IPv4 or 1450 over IPv6 when it is longer ([`src/Settings.cpp:3194`](https://sourceforge.net/p/iperf2/code/ci/74d4b55321b9e7827c6567f3e48ae024ba3417c8/tree/src/Settings.cpp#l3194)).
 - The server takes the length of the test from `mAmount` ([`src/Settings.cpp:3119`](https://sourceforge.net/p/iperf2/code/ci/74d4b55321b9e7827c6567f3e48ae024ba3417c8/tree/src/Settings.cpp#l3119)).
 - The server takes the rate from `lRate` and `uRate` ([`src/Settings.cpp:3217`](https://sourceforge.net/p/iperf2/code/ci/74d4b55321b9e7827c6567f3e48ae024ba3417c8/tree/src/Settings.cpp#l3217)).
 - A UDP server sends the prefix and fill, without a header ([`src/Client.cpp:395`](https://sourceforge.net/p/iperf2/code/ci/74d4b55321b9e7827c6567f3e48ae024ba3417c8/tree/src/Client.cpp#l395)).
 - A UDP server ends with one datagram of negative ID, and does not wait for a reply ([`src/Client.cpp:3158`](https://sourceforge.net/p/iperf2/code/ci/74d4b55321b9e7827c6567f3e48ae024ba3417c8/tree/src/Client.cpp#l3158)).
-- The client reads the server's UDP IDs as signed 32-bit values ([`src/Listener.cpp:1024`](https://sourceforge.net/p/iperf2/code/ci/74d4b55321b9e7827c6567f3e48ae024ba3417c8/tree/src/Listener.cpp#l1024)).
+- The client reads the server's UDP IDs as signed 32-bit values, because only the listener sets the 64-bit flag ([`src/Server.cpp:1322`](https://sourceforge.net/p/iperf2/code/ci/74d4b55321b9e7827c6567f3e48ae024ba3417c8/tree/src/Server.cpp#l1322)).
 - In time mode, the client stops reading at `-t` plus 2 s ([`src/Server.cpp:1151`](https://sourceforge.net/p/iperf2/code/ci/74d4b55321b9e7827c6567f3e48ae024ba3417c8/tree/src/Server.cpp#l1151)).
 - In byte mode, a TCP client stops reading after `-n` bytes ([`src/Server.cpp:496`](https://sourceforge.net/p/iperf2/code/ci/74d4b55321b9e7827c6567f3e48ae024ba3417c8/tree/src/Server.cpp#l496)).
 - A TCP server ends with `shutdown(SHUT_WR)` and waits for the client to close ([`src/Client.cpp:3131`](https://sourceforge.net/p/iperf2/code/ci/74d4b55321b9e7827c6567f3e48ae024ba3417c8/tree/src/Client.cpp#l3131)).
@@ -157,7 +158,8 @@ Each claim links the file and line it comes from. The [iperf2](../entities/iperf
 - That datagram has the full `-l` length, header included ([`src/Client.cpp:3161`](https://sourceforge.net/p/iperf2/code/ci/74d4b55321b9e7827c6567f3e48ae024ba3417c8/tree/src/Client.cpp#l3161)).
 - The client waits for a reply in steps of 10 ms, at most 200 times ([`src/Client.cpp:3227`](https://sourceforge.net/p/iperf2/code/ci/74d4b55321b9e7827c6567f3e48ae024ba3417c8/tree/src/Client.cpp#l3227)).
 - After each silent step, the client sends the datagram again with the ID one lower: `-(N+1)`, then `-(N+2)` ([`src/Client.cpp:3247`](https://sourceforge.net/p/iperf2/code/ci/74d4b55321b9e7827c6567f3e48ae024ba3417c8/tree/src/Client.cpp#l3247)).
-- The client reads any reply of positive length as the server report, from offset 16, without checking its length or flags ([`src/Client.cpp:3275`](https://sourceforge.net/p/iperf2/code/ci/74d4b55321b9e7827c6567f3e48ae024ba3417c8/tree/src/Client.cpp#l3275)).
+- The client skips a reply of 52 bytes, the size of `client_hdr_ack`, whose `type` is 2 ([`src/Client.cpp:3263`](https://sourceforge.net/p/iperf2/code/ci/74d4b55321b9e7827c6567f3e48ae024ba3417c8/tree/src/Client.cpp#l3263)).
+- The client reads any other reply of positive length as the server report, from offset 16, without checking its length or flags ([`src/Client.cpp:3275`](https://sourceforge.net/p/iperf2/code/ci/74d4b55321b9e7827c6567f3e48ae024ba3417c8/tree/src/Client.cpp#l3275)).
 - Without a reply, the client prints "did not receive ack of last datagram" ([`src/Client.cpp:3289`](https://sourceforge.net/p/iperf2/code/ci/74d4b55321b9e7827c6567f3e48ae024ba3417c8/tree/src/Client.cpp#l3289)).
 
 ### The server report

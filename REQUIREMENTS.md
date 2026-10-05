@@ -47,7 +47,7 @@ crates.io had no `no_std` iperf crate on 2026-10-05. Every iperf crate there is 
 
 | Feature | What v1 does |
 |---|---|
-| Parallel streams, `-P` | The server refuses a second connection while a test runs. See P-14. |
+| Parallel streams, `-P` | The server refuses the test. See P-13. |
 | Tradeoff and dual tests, `-r` and `-d` | The server refuses the test. See P-13. |
 | Full duplex, `--full-duplex` | The server refuses the test. See P-13. |
 | Isochronous tests, bursts, `--trip-times` and bounceback | The server refuses the test. See P-13. |
@@ -115,7 +115,7 @@ Every field is big-endian. Each offset counts from the start of the message. [Th
 
 **W-6** In time mode, `mAmount` is the duration in units of 10 ms, negated, as a 32-bit two's complement number. In byte mode, `mAmount` is the byte count masked with 0x7FFFFFFF. A reader takes a set top bit as time mode.
 
-**W-7** A reader takes the header length from `flags`. With none of 0x80000000, 0x40000000 and 0x04000000 set, the stream has no test header. With 0x00010000 set, the length is `(flags & 0xFFFE) >> 1`. Otherwise the length is 24 when 0x80000000 or 0x40000000 is set, plus 40 when 0x04000000 or 0x40000000 is set. A reader refuses a length above 256, or below the 64 bytes of W-4 when a header is present.
+**W-7** A reader takes the header length from `flags`. With none of 0x80000000, 0x40000000 and 0x04000000 set, the stream has no test header. With 0x00010000 set, the length is `(flags & 0xFFFE) >> 1`. Otherwise the length is 24 when 0x80000000 or 0x40000000 is set, plus 40 when 0x04000000 or 0x40000000 is set. A reader refuses a length above 256. When a header is present, a reader also refuses a length below 64 in a TCP header, or below 80 in a UDP header, whose length includes the prefix.
 
 **W-8** The rate in a UDP header is the caller's rate, or 1048576 bit/s when the caller did not set one. The rate in a TCP header is the caller's rate, or 0 when the caller did not set one.
 
@@ -132,18 +132,17 @@ Every field is big-endian. Each offset counts from the start of the message. [Th
 | 16 | 4 | `version_l` | 0x00020003 |
 | 20 | 8 | `reserved1`, `reserved2` | 0 |
 
-**W-10** In a reverse TCP test, each burst of `burst_size` bytes starts with a 120-byte burst header. Our server writes these fields, and the other bytes of the header are fill:
+**W-10** In a reverse TCP test, each burst of `burst_size` bytes starts with a 120-byte burst header. A reader needs these fields:
 
 | Offset | Size | Field | Contents |
 |---|---|---|---|
 | 12 | 8 | `start_tv_sec`, `start_tv_usec` | The sender's clock at the start of the test |
 | 20 | 8 | `write_tv_sec`, `write_tv_usec` | The sender's clock at the write of the burst |
-| 36 | 4 | `reverse_retry` | 0xFFFFFFFF |
 | 44 | 4 | `burst_id` | 1 for the first burst, and one more for each later burst |
 | 48 | 4 | `burst_size` | The length of the burst, header included |
 | 52 | 8 | `seqno_lower`, `seqno_upper` | 1 plus the bytes of every burst so far, this one included, low and high word |
-| 76 | 32 | `reverse_bytes_in_flight` to `reverse_write_time` | 0xFFFFFFFF in each 4-byte field |
-| 108 | 12 | `reverse_*_limited`, `reverse_busy_time` | 0 |
+
+**W-13** The other fields of the burst header hold the sender's TCP statistics. Our server writes 0xFFFFFFFF in `reverse_retry` at offset 36 and in each 4-byte field from offset 76 to 107, which a stock reader takes as unknown. It writes 0 from offset 108 to 119, and fill in the other bytes.
 
 ### The server report
 
@@ -171,7 +170,7 @@ Every field is big-endian. Each offset counts from the start of the message. [Th
 
 ### The client
 
-**P-1** A TCP client sends the test header, then data until the duration ends or the byte count is sent. The header bytes count toward the byte count. The client then shuts down its write side, and reads and discards what the server sends until the server closes.
+**P-1** A TCP client sends the test header, then data until the duration ends or the byte count is sent. The header bytes count toward the byte count. The client then shuts down its write side, and reads and discards what the server sends until the server closes. It waits for the close for at most the larger of the duration and 2 s.
 
 **P-2** A UDP client sends datagrams of `-l` bytes at the rate of W-8. Over a test of at least 1 s, the bytes it sends per second are within 2 % of the rate. In byte mode, the last datagram is cut to the bytes left, and is never shorter than the 80-byte header.
 
@@ -179,9 +178,13 @@ Every field is big-endian. Each offset counts from the start of the message. [Th
 
 **P-4** A UDP client that receives no server report ends the test without one, and its result says so.
 
-**P-5** A client in a reverse TCP test sends the test header and then reads bursts of W-10 until the server closes. It refuses a burst header whose `burst_size` is below 120.
+**P-5** A client in a reverse TCP test sends the test header and then reads bursts of W-10 until the server closes, or in byte mode until the byte count has arrived. It refuses a burst header whose `burst_size` is below 120.
 
-**P-6** A client in a reverse UDP test sends the header datagram with packet ID 1, and sends it again each second until data arrives. It ends the test with an error when no data arrives within 10 s. It then receives as a UDP server does (P-11), and ends the test at a negative packet ID or at the duration plus 2 s. It sends no server report.
+**P-6** A client in a reverse UDP test sends the header datagram with packet ID 1, and sends it again each second until data arrives. It ends the test with an error when no data arrives within 10 s.
+
+**P-22** A client in a reverse UDP test receives as a UDP server does (P-11), and ends the test at a negative packet ID or at the duration plus 2 s.
+
+**P-23** A client in a reverse UDP test sends no server report.
 
 **P-7** Without the caller's choice, the client uses port 5001, a duration of 10 s, `-l` of 131072 bytes for TCP and 1470 bytes for UDP over IPv4.
 
@@ -193,17 +196,19 @@ Every field is big-endian. Each offset counts from the start of the message. [Th
 
 **P-10** A TCP server receives until the client closes, then closes. The test lasts from the first byte to the close.
 
-**P-11** A UDP server starts a test at a datagram of at least 40 bytes with a packet ID above 0. It reads 64-bit packet IDs when the first datagram's `flags` have 0x08000000 set, and 32-bit IDs otherwise. It reads no test header when `flags` are 0x36373839. While a test runs, it ignores datagrams from any other address.
+**P-11** A UDP server starts a test at a datagram of at least 40 bytes with a packet ID above 0. It reads 64-bit packet IDs when the first datagram's `flags` have 0x08000000 set, and 32-bit IDs otherwise. It reads no test header when `flags` are 0x36373839. While a test runs, it ignores datagrams from another address or port.
 
 **P-12** A UDP server ends a test at a negative packet ID, and sends the server report of W-11. For each datagram that arrives within 250 ms of its last report, it sends the same report again, up to 9 reports.
 
-**P-13** A server refuses a test whose test header asks for a mode outside v1. Such a header has 0x80000000 set without 0x04000000, or has any of 0x10000000 and 0x00800000 set, or has an `upperflags` or `lowerflags` bit other than 0x0400 set. A TCP server closes the connection. A UDP server ignores the flow.
+**P-13** A server refuses a test whose test header asks for a mode outside v1. Such a header has 0x80000000 set without 0x04000000, or has any of 0x10000000 and 0x00800000 set, or has an `upperflags` or `lowerflags` bit other than 0x0400 set, or has a `numThreads` other than 1. A TCP server closes the connection. A UDP server ignores the flow.
 
 **P-14** A server runs one test at a time. It refuses a TCP connection, or ignores a UDP flow, that starts while a test runs.
 
 **P-15** A server that the caller gave a duration ends a test at that duration, whether or not the end of the test arrived.
 
-**P-16** In a reverse test, the server sends with the `-l` from `mBufLen` when it is not 0, and with the default of P-7 otherwise. It sends for the length of W-6 at the rate of W-8. A TCP server sends bursts of `-l` bytes, or 120 bytes when `-l` is smaller, each with the burst header of W-10, then shuts down its write side. A UDP server sends the prefix and fill, without a header, then one datagram of negative packet ID, and does not wait for a reply.
+**P-16** A TCP server in a reverse test sends for the length of W-6 at the rate of W-8. It sends bursts of `mBufLen` bytes, or 131072 bytes when `mBufLen` is 0, and 120 bytes when that is smaller. Each burst starts with the burst header of W-10. The server then shuts down its write side.
+
+**P-21** A UDP server in a reverse test sends for the length of W-6 at the rate of W-8. Its datagrams are `mBufLen` bytes, cut to 1470 bytes over IPv4 or 1450 over IPv6, and those defaults when `mBufLen` is 0. Each datagram holds the prefix and fill, without a header. The server then sends one datagram of negative packet ID, and does not wait for a reply.
 
 ### Counting
 
@@ -268,7 +273,7 @@ Development is test first. `CONVENTIONS.md` states how a developer writes and ch
 
 **T-1** `cargo xtask record` records the samples from a stock iperf 2.2.2 on loopback into `embedded-iperf2/tests/samples/2.2.2/`. The cases cover TCP and UDP, each forward and reverse, and each transport in time mode and in byte mode. The samples' `README.md` lists them. A test parses every message in every sample, and checks each field that the wire format fixes.
 
-**T-2** A test feeds the client datagrams of each UDP sample to our server, in their recorded order. The byte, datagram, lost and out-of-order counts in our report equal those in the recorded server report.
+**T-2** A test feeds the client datagrams of each forward UDP sample to our server, in their recorded order. The byte, datagram, lost and out-of-order counts in our report equal those in the recorded server report.
 
 ### Unit and property tests
 

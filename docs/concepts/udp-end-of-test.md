@@ -22,4 +22,4 @@ The server is the sender. It sends one datagram of negative ID and does not wait
 
 A sender that never sends a negative ID, such as one without a test header, leaves a stock server waiting. The server ends the test only at its own `-t`, when it was started with one.
 
-Requirements that use the term: W-3, W-11, P-3, P-4, P-6, P-12, P-15 and P-16.
+Requirements that use the term: W-3, W-11, P-3, P-4, P-12, P-15 and P-21 to P-23.

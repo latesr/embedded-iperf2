@@ -24,7 +24,7 @@ Observed in [the 2.2.2 samples](../../embedded-iperf2/tests/samples/2.2.2/README
 - The first bytes from a TCP client are the 64-byte test header with `flags` 0x40010080, or 0x44010080 with `-R`. See `tcp.bin` and `tcp-reverse.bin`.
 - The TCP server sends the 28-byte header ack in a forward test, and nothing else. It sends no ack in a reverse test. See `tcp.bin` and `tcp-reverse.bin`.
 - The header counts toward `-n`. With `-n 64K -l 16K`, the client sent the 64-byte header and 65472 bytes of data. See `tcp.bin`.
-- In a reverse TCP test, each burst header leaves `burst_period_us` unwritten, so it holds fill. On macOS, `reverse_retry` is 0xFFFFFFFF in the first burst and 0 in the last. See `tcp-reverse.bin`.
+- In a reverse TCP test, each burst header leaves `burst_period_us` unwritten, so it holds fill. On macOS, the sender's TCP statistics are 0xFFFFFFFF in the first burst. In each later burst they hold values, such as `reverse_retry` 0 and `reverse_rtt` 1000. See `tcp-reverse.bin`.
 - The `mPort` field holds the port the client connected to, which is the relay's port in these samples.
 - The UDP client sets `flags` 0x480100A0, and 0xEC0100A0 with `-R -l 512`. See `udp.bin` and `udp-reverse.bin`.
 - In a reverse UDP test, the client sent one header datagram. The server's datagrams hold the prefix and then fill from offset 16. See `udp-reverse.bin`.

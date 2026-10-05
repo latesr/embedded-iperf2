@@ -24,4 +24,4 @@ A server reads no header when `flags` have none of `HEADER_VERSION1`, `HEADER_VE
 
 A TCP server answers a forward test's header with the 28-byte header ack. A stock client reads the ack only with `-X`, and otherwise reads and discards it when the test ends. A TCP server answers a reverse test's header with data in bursts, each with a burst header.
 
-Requirements that use the term: W-4 to W-8, P-1, P-5, P-6, P-8, P-9, P-11, P-13 and P-16.
+Requirements that use the term: W-4 to W-8, P-1, P-5, P-6, P-8, P-9, P-11, P-13, P-16 and P-21.
