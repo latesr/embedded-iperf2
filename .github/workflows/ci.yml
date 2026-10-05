@@ -1,0 +1,58 @@
+# This workflow has not run until the repo has a remote. The commit hook runs the same checks until then.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "0 3 * * *"
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The mutation step diffs against the commit before the push, so it needs the history.
+          fetch-depth: 0
+      - name: Install the pinned toolchain and targets
+        run: rustup show
+      - name: Install the MSRV toolchain
+        run: rustup toolchain install 1.91 --profile minimal
+      - uses: taiki-e/install-action@cargo-hack
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo xtask check
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-mutants
+      # A new branch has no commit before the push, and GitHub then sends all zeros. A force push can send a commit
+      # that is gone. The merge base with main covers both.
+      - name: Mutation test the lines this push or pull request changes
+        run: |
+          base="${{ github.event.pull_request.base.sha || github.event.before }}"
+          if ! git cat-file -e "${base}^{commit}" 2>/dev/null; then
+            base="$(git merge-base HEAD origin/main)"
+          fi
+          cargo xtask mutants --base "$base"
+
+  nightly:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install the pinned toolchain and targets
+        run: rustup show
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-hack,cargo-mutants
+      - uses: Swatinem/rust-cache@v2
+      # cargo xtask check covers each feature alone and each pair. This covers every combination.
+      - name: Check every feature combination
+        run: cargo hack check --workspace --feature-powerset --no-dev-deps
+      - name: Mutation test every crate
+        run: cargo mutants --workspace

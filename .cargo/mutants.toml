@@ -1,0 +1,8 @@
+# Files that only start other programs have no unit tests. Their check is the output they produce, so a mutant in
+# them survives every test run and says nothing about coverage.
+exclude_globs = [
+    "xtask/src/main.rs",
+    "xtask/src/check.rs",
+    "xtask/src/shared/hooks.rs",
+    "xtask/src/shared/mutants.rs",
+]
