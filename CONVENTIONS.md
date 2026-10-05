@@ -300,7 +300,7 @@ These rules add to the ones above for every library crate that runs on a microco
 | Check | Command |
 |---|---|
 | Cross targets | `cargo build` of each published `no_std` crate for each target that `REQUIREMENTS.md` marks "Build on every CI push" |
-| Code size | `cargo xtask size` builds each reference firmware and reports flash and static RAM. It compares them with the budget in `REQUIREMENTS.md` once the budget is set. |
+| Code size | `cargo xtask size` builds each reference firmware and reports flash and static RAM. It compares them with the budget file that `REQUIREMENTS.md` names, once the budget is set. |
 
 A repo runs the code size check once it has firmware.
 
