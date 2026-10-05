@@ -2,6 +2,7 @@
 //! writing fault should fail before the builds.
 
 use crate::shared;
+use crate::shared::checks::{changed_paths, only_markdown, step};
 use std::path::Path;
 use std::process::Command;
 
@@ -17,6 +18,11 @@ pub fn run(root: &Path) -> Result<(), String> {
     shared::links::run(root)?;
     println!("==> prose");
     shared::prose::run(root, None)?;
+    // The root workspace is the one group. No code reads a markdown file at run time, so it names no markdown path.
+    if only_markdown(&changed_paths(root), &[]) {
+        println!("==> every cargo check skipped, because the change is only markdown");
+        return Ok(());
+    }
     shared::require_tool(root, "hack", "cargo install cargo-hack")?;
     step("format", cargo(root).args(["fmt", "--all", "--check"]))?;
     step(
@@ -103,19 +109,6 @@ fn cargo(root: &Path) -> Command {
     let mut command = Command::new("cargo");
     command.current_dir(root);
     command
-}
-
-/// Prints the step's name, runs it and fails when its exit status is not success.
-fn step(name: &str, command: &mut Command) -> Result<(), String> {
-    println!("==> {name}");
-    let status = command
-        .status()
-        .map_err(|error| format!("{name}: could not start cargo: {error}"))?;
-    if status.success() {
-        Ok(())
-    } else {
-        Err(format!("{name}: failed"))
-    }
 }
 
 /// The targets listed in `rust-toolchain.toml`. That file is what rustup installs, so it owns the list.
