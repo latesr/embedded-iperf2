@@ -1,0 +1,23 @@
+[package]
+name = "embedded-iperf2-fuzz"
+description = "The fuzz target for the wire format. Not published. cargo xtask fuzz runs it."
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+embedded-iperf2 = { path = "../embedded-iperf2" }
+
+[[bin]]
+name = "parse"
+path = "fuzz_targets/parse.rs"
+test = false
+doc = false
+bench = false
+
+# cargo-fuzz builds with its own flags, so this crate is its own workspace and the root excludes it.
+[workspace]

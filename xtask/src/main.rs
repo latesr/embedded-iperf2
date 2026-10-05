@@ -1,6 +1,7 @@
 //! Repository tasks. `cargo xtask <command>` runs one.
 
 mod check;
+mod fuzz;
 mod record;
 mod shared;
 
@@ -23,6 +24,12 @@ enum Command {
         /// Record only these cases. Every case is recorded when none is named.
         only: Vec<String>,
     },
+    /// Run the parser fuzz target on nightly, seeded with the samples.
+    Fuzz {
+        /// How long to fuzz for.
+        #[arg(long, default_value_t = 60)]
+        seconds: u64,
+    },
     #[command(flatten)]
     Shared(shared::Command),
 }
@@ -33,6 +40,7 @@ fn main() {
     let result = match cli.command {
         Command::Check => check::run(&root),
         Command::Record { only } => record::run(&root, &only),
+        Command::Fuzz { seconds } => fuzz::run(&root, seconds),
         Command::Shared(command) => shared::run(&root, command),
     };
     if let Err(message) = result {

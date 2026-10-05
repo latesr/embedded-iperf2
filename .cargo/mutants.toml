@@ -6,4 +6,12 @@ exclude_globs = [
     "xtask/src/shared/hooks.rs",
     "xtask/src/shared/mutants.rs",
     "xtask/src/record/mod.rs",
+    "xtask/src/fuzz.rs",
+]
+
+# Every `|` in the wire module joins bits that do not overlap: flag constants, or a high word shifted past a low
+# word. `^` gives the same value there, so the mutant cannot change behaviour. A `|` of bits that can overlap would
+# need this rule narrowed.
+exclude_re = [
+    'src/wire/.*: replace \| with \^',
 ]

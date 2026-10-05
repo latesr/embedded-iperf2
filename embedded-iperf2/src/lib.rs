@@ -3,3 +3,5 @@
 //! `REQUIREMENTS.md` in the repository states what this crate must do.
 
 #![cfg_attr(not(test), no_std)]
+
+pub mod wire;

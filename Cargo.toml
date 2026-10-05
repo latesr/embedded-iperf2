@@ -1,6 +1,8 @@
 [workspace]
 resolver = "3"
 members = ["embedded-iperf2", "xtask"]
+# The fuzz crate is its own workspace, because cargo-fuzz builds it with its own flags on nightly.
+exclude = ["fuzz"]
 
 [workspace.package]
 version = "0.1.0"

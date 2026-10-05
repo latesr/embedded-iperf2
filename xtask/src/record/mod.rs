@@ -1,7 +1,7 @@
 //! `cargo xtask record`: runs a stock iperf 2.2.2 client and server on loopback, through a relay that writes the
 //! bytes of each direction to a sample file.
 
-mod sample;
+pub mod sample;
 
 use sample::Direction;
 use std::io::{ErrorKind, Read, Write};

@@ -13,5 +13,8 @@ embassy-net = []
 # The driver for a host, over the standard library's sockets.
 std = []
 
+[dev-dependencies]
+proptest = { version = "1", default-features = false, features = ["std"] }
+
 [lints]
 workspace = true

@@ -25,6 +25,29 @@ pub fn append(file: &mut Vec<u8>, direction: Direction, bytes: &[u8]) -> Result<
     Ok(())
 }
 
+/// The bytes of each record in `file`, in order. Fails on a direction other than 0 or 1, or a record that runs
+/// past the end of the file.
+pub fn records(file: &[u8]) -> Result<Vec<&[u8]>, String> {
+    let mut found = Vec::new();
+    let mut rest = file;
+    while let [direction, a, b, c, d, tail @ ..] = rest {
+        if *direction > 1 {
+            return Err(format!("a record has direction {direction}"));
+        }
+        let length = u32::from_be_bytes([*a, *b, *c, *d]) as usize;
+        let record = tail
+            .get(..length)
+            .ok_or("a record runs past the end of the file")?;
+        found.push(record);
+        rest = tail.get(length..).unwrap_or_default();
+    }
+    if rest.is_empty() {
+        Ok(found)
+    } else {
+        Err("the file ends inside a record's length".to_owned())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -37,5 +60,25 @@ mod tests {
         let mut expected = vec![0, 0, 0, 0, 2, b'a', b'b', 1, 0, 0, 1, 44];
         expected.extend([7; 300]);
         assert_eq!(file, expected);
+    }
+
+    #[test]
+    fn records_reads_back_what_append_wrote() {
+        let mut file = Vec::new();
+        append(&mut file, Direction::ServerToClient, b"abc").unwrap();
+        append(&mut file, Direction::ClientToServer, b"").unwrap();
+        append(&mut file, Direction::ClientToServer, b"de").unwrap();
+        assert_eq!(records(&file), Ok(vec![&b"abc"[..], b"", b"de"]));
+        assert_eq!(records(&[]), Ok(vec![]));
+    }
+
+    #[test]
+    fn records_refuses_a_cut_record_or_an_unknown_direction() {
+        let mut file = Vec::new();
+        append(&mut file, Direction::ClientToServer, b"abc").unwrap();
+        assert!(records(&file[..7]).is_err());
+        assert!(records(&file[..3]).is_err());
+        file[0] = 2;
+        assert!(records(&file).is_err());
     }
 }

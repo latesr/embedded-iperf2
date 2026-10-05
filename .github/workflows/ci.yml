@@ -47,12 +47,16 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install the pinned toolchain and targets
         run: rustup show
+      - name: Install nightly for the fuzzer
+        run: rustup toolchain install nightly --profile minimal
       - uses: taiki-e/install-action@v2
         with:
-          tool: cargo-hack,cargo-mutants
+          tool: cargo-fuzz,cargo-hack,cargo-mutants
       - uses: Swatinem/rust-cache@v2
       # cargo xtask check covers each feature alone and each pair. This covers every combination.
       - name: Check every feature combination
         run: cargo hack check --workspace --feature-powerset --no-dev-deps
+      - name: Fuzz the parser for ten minutes
+        run: cargo xtask fuzz --seconds 600
       - name: Mutation test every crate
         run: cargo mutants --workspace
