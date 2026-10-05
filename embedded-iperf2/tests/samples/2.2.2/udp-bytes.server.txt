@@ -1,0 +1,7 @@
+------------------------------------------------------------
+Server listening on UDP port 63310
+UDP buffer size:  768 KByte (default)
+------------------------------------------------------------
+[  1] local 127.0.0.1 port 63310 connected with 127.0.0.1 port 54476
+[ ID] Interval       Transfer     Bandwidth        Jitter   Lost/Total Datagrams
+[  1] 0.00-0.50 sec  16.5 KBytes   270 Kbits/sec   0.083 ms 0/33 (0%)

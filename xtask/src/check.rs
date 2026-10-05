@@ -6,7 +6,7 @@ use std::path::Path;
 use std::process::Command;
 
 /// The crates that are published to crates.io and must build for every target in `rust-toolchain.toml`.
-const PUBLISHED: &[&str] = &[];
+const PUBLISHED: &[&str] = &["embedded-iperf2"];
 
 /// Runs each check in turn and stops at the first failure.
 pub fn run(root: &Path) -> Result<(), String> {

@@ -1,0 +1,7 @@
+------------------------------------------------------------
+Client connecting to 127.0.0.1, TCP port 56641
+TCP window size:  128 KByte (default)
+------------------------------------------------------------
+[  1] local 127.0.0.1 port 56642 connected with 127.0.0.1 port 56641 (reverse)
+[ ID] Interval       Transfer     Bandwidth
+[ *1] 0.00-0.00 sec  64.0 KBytes  0.000 bits/sec

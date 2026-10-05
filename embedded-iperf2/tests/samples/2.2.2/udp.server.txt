@@ -1,0 +1,7 @@
+------------------------------------------------------------
+Server listening on UDP port 51063
+UDP buffer size:  768 KByte (default)
+------------------------------------------------------------
+[  1] local 127.0.0.1 port 51063 connected with 127.0.0.1 port 54818
+[ ID] Interval       Transfer     Bandwidth        Jitter   Lost/Total Datagrams
+[  1] 0.00-2.02 sec  65.0 KBytes   264 Kbits/sec   0.169 ms 0/130 (0%)

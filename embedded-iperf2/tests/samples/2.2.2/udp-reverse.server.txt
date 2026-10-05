@@ -1,0 +1,8 @@
+------------------------------------------------------------
+Server listening on UDP port 52506
+UDP buffer size:  768 KByte (default)
+------------------------------------------------------------
+[  1] local 127.0.0.1 port 52506 connected with 127.0.0.1 port 62987 (reverse) (no-udp-fin)
+[ ID] Interval       Transfer     Bandwidth
+[  1] 0.00-2.02 sec  65.0 KBytes   264 Kbits/sec
+[  1] Sent 131 datagrams

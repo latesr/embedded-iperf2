@@ -1,0 +1,10 @@
+------------------------------------------------------------
+Client connecting to 127.0.0.1, UDP port 52449
+Sending 512 byte datagrams, IPG target: 0.00 us (kalman adjust)
+UDP buffer size: 9.00 KByte (default)
+------------------------------------------------------------
+[  1] local 127.0.0.1 port 65046 connected with 127.0.0.1 port 52449 (reverse)
+[ ID] Interval       Transfer     Bandwidth        Jitter   Lost/Total Datagrams
+[ *1] 0.00-1.00 sec  32.5 KBytes   266 Kbits/sec   0.066 ms 0/65 (0%)
+[ *1] 1.00-2.00 sec  31.5 KBytes   258 Kbits/sec   0.105 ms 0/63 (0%)
+[ *1] 0.00-2.01 sec  65.0 KBytes   264 Kbits/sec   0.068 ms 0/130 (0%)

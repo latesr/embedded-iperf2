@@ -1,6 +1,7 @@
 //! Repository tasks. `cargo xtask <command>` runs one.
 
 mod check;
+mod record;
 mod shared;
 
 use clap::{Parser, Subcommand};
@@ -17,6 +18,11 @@ struct Cli {
 enum Command {
     /// Run every check that CI runs.
     Check,
+    /// Record the samples from the iperf 2.2.2 binary that `MCU_IPERF2` names.
+    Record {
+        /// Record only these cases. Every case is recorded when none is named.
+        only: Vec<String>,
+    },
     #[command(flatten)]
     Shared(shared::Command),
 }
@@ -26,6 +32,7 @@ fn main() {
     let root = repo_root();
     let result = match cli.command {
         Command::Check => check::run(&root),
+        Command::Record { only } => record::run(&root, &only),
         Command::Shared(command) => shared::run(&root, command),
     };
     if let Err(message) = result {

@@ -1,0 +1,7 @@
+------------------------------------------------------------
+Server listening on TCP port 56644
+TCP window size:  128 KByte (default)
+------------------------------------------------------------
+[  1] local 127.0.0.1 port 56644 connected with 127.0.0.1 port 56647
+[ ID] Interval       Transfer     Bandwidth
+[  1] 0.00-2.00 sec  80.1 KBytes   328 Kbits/sec

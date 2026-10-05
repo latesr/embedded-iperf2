@@ -1,0 +1,8 @@
+------------------------------------------------------------
+Server listening on TCP port 56640
+TCP window size:  128 KByte (default)
+------------------------------------------------------------
+[  1] local 127.0.0.1 port 56640 connected with 127.0.0.1 port 56643 (reverse)
+[ ID] Interval       Transfer     Bandwidth
+[  1] 0.00-0.02 sec  64.0 KBytes  25.0 Mbits/sec
+Waiting for server threads to complete. Interrupt again to force quit.

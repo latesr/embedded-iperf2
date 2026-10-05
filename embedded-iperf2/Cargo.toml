@@ -1,0 +1,17 @@
+[package]
+name = "embedded-iperf2"
+description = "An iperf 2 client and server for no_std targets, wire compatible with iperf 2.2.2."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[features]
+# The driver for a board, over an embassy-net stack.
+embassy-net = []
+# The driver for a host, over the standard library's sockets.
+std = []
+
+[lints]
+workspace = true
