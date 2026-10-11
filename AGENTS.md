@@ -18,7 +18,7 @@ embedded-iperf2 is an iperf 2 client and server for microcontrollers, wire compa
 
 `cargo xtask record` records every case into `embedded-iperf2/tests/samples/<version>/`, and `cargo xtask record <case>` records one. It runs a stock iperf server and client on 127.0.0.1, with a relay between them that writes both directions to `<case>.bin`. It saves what the client and the server printed beside it. The rustdoc of `xtask/src/record/sample.rs` states the file layout.
 
-The recorder needs the binary that `MCU_IPERF2` names, and refuses one that does not report the pinned version. `cargo xtask install-iperf` builds it from the iperf2 repository at the pin into `~/.local/opt/iperf/2.2.2/iperf`. A package manager's iperf has another version.
+The recorder and the interoperability tests need the binary that `MCU_IPERF2` names, and refuse one that does not report the pinned version. `cargo xtask install-iperf` builds it from the iperf2 repository at the pin into `~/.local/opt/iperf/2.2.2/iperf`. A package manager's iperf has another version.
 
 ## Fuzzing
 

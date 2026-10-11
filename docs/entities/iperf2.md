@@ -31,3 +31,8 @@ Observed in [the 2.2.2 samples](../../embedded-iperf2/tests/samples/2.2.2/README
 - The server report holds a jitter of 168 µs in `udp.bin`, and the server prints 0.169 ms. The stock client prints the jitter of the same report as 0.000 ms. See `udp.client.txt` and `udp.server.txt`.
 - The server report in `udp.bin` reads, by the layout of W-11: `flags` 0x88000000, 66560 bytes, a duration of 2 s and 17751 µs, 0 lost, 0 out of order, 130 datagrams and a jitter of 168 µs. 66560 bytes is 130 datagrams of 512 bytes, so the end-of-test datagram counts toward the bytes.
 - The client printed `Sent 131 datagrams` in `udp.client.txt`. The relay saw 130 datagrams from it: 129 of data and one end of test. The server counted 130.
+
+Observed by the interoperability tests in [`interop.rs`](../../embedded-iperf2/tests/interop.rs), on macOS from a build of `74d4b553`:
+
+- In a reverse UDP test in byte mode, the stock client prints its report and then does not exit. `stock_client_against_our_server` stops it with SIGINT once our server has ended the test.
+- With `-y C`, a TCP report line has 9 fields, and the eighth holds the bytes. A UDP report line has 14 fields. It adds the jitter, the lost datagrams, the total, the percent lost and the out-of-order datagrams.
