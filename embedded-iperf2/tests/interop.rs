@@ -26,8 +26,8 @@ use std::time::{Duration, Instant};
 
 /// The time a stock server gets to open its socket before our client starts.
 const SERVER_START: Duration = Duration::from_millis(500);
-/// The time a stock client gets to exit after our server ends the test.
-const CLIENT_EXIT: Duration = Duration::from_secs(3);
+/// The time a stock process gets to exit, after our server ends its test or after SIGINT.
+const EXIT_WAIT: Duration = Duration::from_secs(3);
 const RATE: u64 = 4_000_000;
 
 #[derive(Clone, Copy, Debug)]
@@ -130,35 +130,52 @@ impl Stock {
         Self(Some(child))
     }
 
-    /// Stops the process with SIGINT, so it flushes its reports, and returns what it printed.
+    /// Stops the process with SIGINT, so it flushes its reports, and returns what it printed. A process that is
+    /// still running `EXIT_WAIT` later is killed, and the text says so.
     fn interrupt(mut self) -> String {
-        let child = self.0.take().unwrap();
-        let status = Command::new("kill")
-            .args(["-INT", &child.id().to_string()])
-            .status()
-            .unwrap();
+        let id = self.0.as_ref().unwrap().id().to_string();
+        let status = Command::new("kill").args(["-INT", &id]).status().unwrap();
         assert!(status.success(), "kill -INT failed");
-        let output = child.wait_with_output().unwrap();
-        String::from_utf8_lossy(&[output.stdout, output.stderr].concat()).into_owned()
+        if let Some(printed) = self.exited_within(EXIT_WAIT) {
+            return printed;
+        }
+        let mut child = self.0.take().unwrap();
+        let _ = child.kill();
+        format!(
+            "{}\n(the process ignored SIGINT for {EXIT_WAIT:?} and was killed)",
+            printed(child)
+        )
     }
 
-    /// Waits up to `CLIENT_EXIT` for the process to exit, and returns what it printed. Panics with what it
-    /// printed when it does not exit in time.
+    /// Waits up to `EXIT_WAIT` for the process to exit, and returns what it printed. Panics with what it printed
+    /// when it does not exit in time.
     fn finish(mut self) -> String {
-        let started = Instant::now();
-        while started.elapsed() < CLIENT_EXIT {
-            if self.0.as_mut().unwrap().try_wait().unwrap().is_some() {
-                let output = self.0.take().unwrap().wait_with_output().unwrap();
-                return String::from_utf8_lossy(&[output.stdout, output.stderr].concat())
-                    .into_owned();
-            }
-            thread::sleep(Duration::from_millis(20));
+        if let Some(printed) = self.exited_within(EXIT_WAIT) {
+            return printed;
         }
         panic!(
-            "the stock client did not exit within {CLIENT_EXIT:?}:\n{}",
+            "the stock client did not exit within {EXIT_WAIT:?}:\n{}",
             self.interrupt()
         );
     }
+
+    /// What the process printed, once it exits within `limit`.
+    fn exited_within(&mut self, limit: Duration) -> Option<String> {
+        let started = Instant::now();
+        while started.elapsed() < limit {
+            if self.0.as_mut().unwrap().try_wait().unwrap().is_some() {
+                return Some(printed(self.0.take().unwrap()));
+            }
+            thread::sleep(Duration::from_millis(20));
+        }
+        None
+    }
+}
+
+/// What `child` printed, on standard output and then standard error, once it exits.
+fn printed(child: Child) -> String {
+    let output = child.wait_with_output().unwrap();
+    String::from_utf8_lossy(&[output.stdout, output.stderr].concat()).into_owned()
 }
 
 impl Drop for Stock {
