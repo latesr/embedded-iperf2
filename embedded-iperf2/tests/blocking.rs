@@ -62,14 +62,15 @@ fn every_mode_ends_with_both_reports_on_loopback() {
                     Transport::Udp => {
                         let udp = receiver.udp.expect(&case);
                         assert_eq!((udp.lost, udp.out_of_order), (0, 0), "{case}");
-                        assert_eq!(receiver.bytes, sender.bytes + 512, "{case}: the end counts");
+                        assert_eq!(receiver.bytes, sender.bytes, "{case}: both count the end");
                     }
                 }
                 match length {
                     // 51200 bytes take 100 ms at the rate. A client whose close did not reach the server would
                     // wait 2 s for the server to close (P-1).
                     Length::Bytes(count) => {
-                        assert_eq!(sender.bytes, count, "{case}");
+                        let end = if transport == Transport::Udp { 512 } else { 0 };
+                        assert_eq!(sender.bytes, count + end, "{case}");
                         assert!(took < Duration::from_secs(1), "{case}: {took:?}");
                     }
                     // The clock is real time, so a test of 300 ms lasts that long and reports each 100 ms.
@@ -115,28 +116,34 @@ fn a_tcp_client_ends_with_its_report_when_the_server_closes_while_it_sends() {
 
 #[test]
 fn a_tcp_server_closes_a_second_connection_while_a_test_runs() {
-    let (address, server) = serve(server_config(Transport::Tcp));
-    let client = start(
-        Config {
-            length: Length::Time { us: 1_500_000 },
-            rate: 1_000_000,
-            ..Config::tcp()
-        },
-        address,
-    );
-    thread::sleep(Duration::from_millis(200));
-    let mut second = TcpStream::connect(address).unwrap();
-    // The test runs for a second more, so only the server's refusal can end this read in time.
-    second
-        .set_read_timeout(Some(Duration::from_millis(400)))
-        .unwrap();
-    let mut byte = [0];
-    match second.read(&mut byte) {
-        Ok(count) => assert_eq!(count, 0, "the server sent to the second connection"),
-        Err(error) => assert_eq!(error.kind(), ErrorKind::ConnectionReset, "{error}"),
+    // A receiving server waits, and reads in each wait. A server that sends without a rate never waits, so only
+    // the read before each poll finds the second connection.
+    for (reverse, rate) in [(false, 1_000_000), (true, 0)] {
+        let case = format!("reverse {reverse}, rate {rate}");
+        let (address, server) = serve(server_config(Transport::Tcp));
+        let client = start(
+            Config {
+                reverse,
+                rate,
+                length: Length::Time { us: 1_500_000 },
+                ..Config::tcp()
+            },
+            address,
+        );
+        thread::sleep(Duration::from_millis(200));
+        let mut second = TcpStream::connect(address).unwrap();
+        // The test runs for a second more, so only the server's refusal can end this read in time.
+        second
+            .set_read_timeout(Some(Duration::from_millis(400)))
+            .unwrap();
+        let mut byte = [0];
+        match second.read(&mut byte) {
+            Ok(count) => assert_eq!(count, 0, "{case}: the server sent to the second connection"),
+            Err(error) => assert_eq!(error.kind(), ErrorKind::ConnectionReset, "{case}: {error}"),
+        }
+        assert_eq!(client.get().outcome, Ok(()), "{case}");
+        assert_eq!(server.get().outcome, Ok(()), "{case}");
     }
-    assert_eq!(client.get().outcome, Ok(()));
-    assert_eq!(server.get().outcome, Ok(()));
 }
 
 /// The first datagram of a UDP test with `num_threads` streams, which a server refuses unless it is 1 (P-13).
@@ -185,7 +192,7 @@ fn a_udp_server_ignores_datagrams_from_another_peer_during_a_test() {
     let client = client.get();
     let server = server.get();
     assert_eq!(server.outcome, Ok(()));
-    assert_eq!(server.last().bytes, client.last().bytes + 512);
+    assert_eq!(server.last().bytes, client.last().bytes);
     assert_eq!(server.last().udp.unwrap().lost, 0);
 }
 

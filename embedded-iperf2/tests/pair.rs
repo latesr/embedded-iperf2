@@ -167,11 +167,12 @@ fn every_mode_ends_with_both_reports() {
                         let udp = receiver.udp.expect(&case);
                         assert_eq!((udp.lost, udp.out_of_order), (0, 0), "{case}");
                         assert_eq!(udp.datagrams * 512, receiver.bytes, "{case}");
-                        assert_eq!(receiver.bytes, sender.bytes + 512, "{case}: the end counts");
+                        assert_eq!(receiver.bytes, sender.bytes, "{case}: both count the end");
                     }
                 }
                 if let Length::Bytes(count) = length {
-                    assert_eq!(sender.bytes, count, "{case}");
+                    let end = if transport == Transport::Udp { 512 } else { 0 };
+                    assert_eq!(sender.bytes, count + end, "{case}");
                 }
                 if !reverse && transport == Transport::Udp {
                     let server_report = client.server.expect(&case);

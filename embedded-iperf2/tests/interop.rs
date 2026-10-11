@@ -20,6 +20,7 @@ use embedded_iperf2::{Config, Length, Report, Transport};
 use loopback::{run, serve, server_config};
 use std::net::{SocketAddr, TcpListener, UdpSocket};
 use std::process::{Child, Command, Stdio};
+use std::sync::OnceLock;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -96,18 +97,22 @@ impl Mode {
     }
 }
 
-/// The stock binary, once it reports 2.2.2.
-fn binary() -> String {
-    let binary = std::env::var("MCU_IPERF2").expect(
-        "MCU_IPERF2 must name an iperf 2.2.2 binary, which `cargo xtask install-iperf` builds",
-    );
-    let output = Command::new(&binary).arg("-v").output().unwrap();
-    let version = String::from_utf8_lossy(&[output.stdout, output.stderr].concat()).into_owned();
-    assert!(
-        version.starts_with("iperf 2.2.2 "),
-        "{binary} reports {version}"
-    );
-    binary
+/// The stock binary, once it reports 2.2.2. The check runs once.
+fn binary() -> &'static str {
+    static BINARY: OnceLock<String> = OnceLock::new();
+    BINARY.get_or_init(|| {
+        let binary = std::env::var("MCU_IPERF2").expect(
+            "MCU_IPERF2 must name an iperf 2.2.2 binary, which `cargo xtask install-iperf` builds",
+        );
+        let output = Command::new(&binary).arg("-v").output().unwrap();
+        let version =
+            String::from_utf8_lossy(&[output.stdout, output.stderr].concat()).into_owned();
+        assert!(
+            version.starts_with("iperf 2.2.2 "),
+            "{binary} reports {version}"
+        );
+        binary
+    })
 }
 
 /// A stock iperf process, which stops when it is dropped.
@@ -137,7 +142,8 @@ impl Stock {
         String::from_utf8_lossy(&[output.stdout, output.stderr].concat()).into_owned()
     }
 
-    /// Waits up to `CLIENT_EXIT` for the process to exit, then interrupts it, and returns what it printed.
+    /// Waits up to `CLIENT_EXIT` for the process to exit, and returns what it printed. Panics with what it
+    /// printed when it does not exit in time.
     fn finish(mut self) -> String {
         let started = Instant::now();
         while started.elapsed() < CLIENT_EXIT {
@@ -148,7 +154,10 @@ impl Stock {
             }
             thread::sleep(Duration::from_millis(20));
         }
-        self.interrupt()
+        panic!(
+            "the stock client did not exit within {CLIENT_EXIT:?}:\n{}",
+            self.interrupt()
+        );
     }
 }
 
@@ -184,37 +193,31 @@ fn last_report(output: &str) -> Counts {
     }
 }
 
-/// Checks that the stock end's last report and our final report agree on what the receiver counted.
+/// Checks that the stock end's last report and our final report agree. Both ends count the end of a UDP test, so
+/// the bytes are equal in every mode.
 fn agree(mode: Mode, ours_sends: bool, printed: &str, ours: &Report) {
     let stock = last_report(printed);
     let case = format!("{mode:?}, ours sends {ours_sends}:\n{printed}");
-    match (mode.transport, ours_sends) {
-        (Transport::Tcp, _) => assert_eq!(stock.bytes, ours.bytes, "{case}"),
-        (Transport::Udp, false) => {
-            let udp = ours.udp.expect(&case);
-            let ours = Counts {
-                bytes: ours.bytes,
-                udp: Some((udp.lost, udp.out_of_order)),
+    assert_eq!(stock.bytes, ours.bytes, "{case}");
+    if mode.transport == Transport::Tcp {
+        return;
+    }
+    if ours_sends {
+        // The stock receiver loses nothing on loopback. A forward client holds the server report, which the
+        // stock receiver wrote from its own count.
+        assert_eq!(stock.udp, Some((0, 0)), "{case}");
+        if let Some(server) = ours.server {
+            let reported = Counts {
+                bytes: server.bytes,
+                udp: Some((server.lost, server.out_of_order)),
             };
-            assert_eq!(stock, ours, "{case}");
+            assert_eq!(stock, reported, "{case}");
         }
-        (Transport::Udp, true) => {
-            // The receiver counts the end of the test as a datagram of data.
-            assert_eq!(
-                stock.bytes,
-                ours.bytes + u64::from(mode.buf_len()),
-                "{case}"
-            );
-            assert_eq!(stock.udp, Some((0, 0)), "{case}");
-            // A forward client holds the server report. That report is the receiver's own count.
-            if let Some(server) = ours.server {
-                let reported = Counts {
-                    bytes: server.bytes,
-                    udp: Some((server.lost, server.out_of_order)),
-                };
-                assert_eq!(stock, reported, "{case}");
-            }
-        }
+    } else {
+        // A stock sender's line always holds 0 lost and 0 out of order. Ours receives on loopback, so its counts
+        // must be 0 too.
+        let udp = ours.udp.expect(&case);
+        assert_eq!((udp.lost, udp.out_of_order), (0, 0), "{case}");
     }
 }
 
@@ -263,8 +266,6 @@ fn stock_client_against_our_server() {
         args.extend(mode.client_args());
         let stock = Stock::start(&args);
         let ours = ours.get();
-        // A stock client of a reverse UDP test in byte mode prints its report and then never exits, so `finish`
-        // interrupts it.
         let printed = stock.finish();
         assert_eq!(ours.outcome, Ok(()), "{mode:?}");
         agree(mode, mode.reverse, &printed, &ours.last());

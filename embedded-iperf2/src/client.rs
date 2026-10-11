@@ -319,7 +319,16 @@ impl<'b> Client<'b> {
                 }
             }
             State::UdpSending(sender) => sender.sent(count),
-            State::UdpEnding { sends, next_us, .. } => {
+            State::UdpEnding {
+                report,
+                sends,
+                next_us,
+                ..
+            } => {
+                // A stock sender counts the end of the test once in its bytes, as the receiver counts it.
+                if *sends == 0 {
+                    report.bytes = report.bytes.saturating_add(count as u64);
+                }
                 *sends = sends.saturating_add(1);
                 *next_us = self.now_us.saturating_add(END_WAIT_US);
             }

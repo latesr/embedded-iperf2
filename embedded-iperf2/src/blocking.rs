@@ -18,6 +18,9 @@ use std::vec;
 
 /// The longest a wait reads before the loop turns again.
 const LONGEST_WAIT: Duration = Duration::from_millis(100);
+/// The longest a client waits for a TCP connection. Without a limit, an address that does not answer holds the
+/// caller for the kernel's own timeout, about 75 s on macOS.
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 /// The length of the driver's receive buffer, which holds the longest UDP datagram.
 const RECEIVE_LEN: usize = 65_536;
 /// How many sends of one datagram in a row may fail, a millisecond apart, before the driver gives up. A host
@@ -29,7 +32,7 @@ const UDP_SEND_TRIES: u32 = 1_000;
 /// The driver connects over TCP or UDP, as the client's [`Config`](crate::Config) states, from an address of the
 /// same family as `server`. `on_report` receives each interval and the final report.
 ///
-/// Returns an error when a socket fails, or when the peer cannot be reached over TCP.
+/// Returns an error when a socket fails, or when the server does not accept a TCP connection within 5 s.
 pub fn run_client(
     client: &mut Client<'_>,
     server: SocketAddr,
@@ -37,7 +40,8 @@ pub fn run_client(
 ) -> io::Result<Result<(), TestError>> {
     match client.config().transport {
         Transport::Tcp => {
-            let mut link = TcpLink::new(TcpStream::connect(server)?, None)?;
+            let stream = TcpStream::connect_timeout(&server, CONNECT_TIMEOUT)?;
+            let mut link = TcpLink::new(stream, None)?;
             run(client, &mut link, on_report)
         }
         Transport::Udp => {
@@ -97,6 +101,9 @@ impl TcpServer {
 /// A test belongs to the address and port of the datagram that started it, and the server ignores other
 /// datagrams until the test ends. After a refused test, it drops the later datagrams of that address and port,
 /// until another address and port is refused (D-6).
+///
+/// A datagram that the last peer sends after its test ended, such as a repeat of its end of the test, starts the
+/// next test. The core refuses it, so that peer's later datagrams are dropped.
 #[derive(Debug)]
 pub struct UdpServer {
     socket: UdpSocket,

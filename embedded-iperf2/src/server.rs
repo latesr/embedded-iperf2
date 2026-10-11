@@ -282,7 +282,11 @@ impl<'b> Server<'b> {
                 *last_us = self.now_us;
             }
             State::UdpEnding { report, .. } => {
-                let report = *report;
+                // A stock sender counts the end of the test in its bytes, as the receiver counts it.
+                let report = Report {
+                    bytes: report.bytes.saturating_add(count as u64),
+                    ..*report
+                };
                 self.finish(report);
             }
             _ => {}

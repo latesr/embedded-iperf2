@@ -34,5 +34,5 @@ Observed in [the 2.2.2 samples](../../embedded-iperf2/tests/samples/2.2.2/README
 
 Observed by the interoperability tests in [`interop.rs`](../../embedded-iperf2/tests/interop.rs), on macOS from a build of `74d4b553`:
 
-- In a reverse UDP test in byte mode, the stock client prints its report and then does not exit. `stock_client_against_our_server` stops it with SIGINT once our server has ended the test.
+- A UDP sender counts the end-of-test datagram in the bytes of its own report, as the receiver counts it. A stock client that sends 51200 bytes in datagrams of 512 bytes reports 51712 bytes, and our server's count equals it. See `stock_client_against_our_server`.
 - With `-y C`, a TCP report line has 9 fields, and the eighth holds the bytes. A UDP report line has 14 fields. It adds the jitter, the lost datagrams, the total, the percent lost and the out-of-order datagrams.

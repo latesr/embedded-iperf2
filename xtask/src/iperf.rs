@@ -48,8 +48,9 @@ pub fn install() -> Result<(), String> {
 
     std::fs::copy(source.join("src/iperf"), &binary)
         .map_err(|error| format!("{}: {error}", binary.display()))?;
-    std::fs::remove_dir_all(&source).map_err(|error| format!("{}: {error}", source.display()))?;
+    // A build of the wrong version keeps its source tree, to inspect.
     check_version(&binary)?;
+    std::fs::remove_dir_all(&source).map_err(|error| format!("{}: {error}", source.display()))?;
     println!("==> installed {}", binary.display());
     println!("==> set MCU_IPERF2 to that path");
     Ok(())

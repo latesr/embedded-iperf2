@@ -759,7 +759,11 @@ fn udp_reverse_sends_the_prefix_and_fill_then_one_end() {
             "fill, without a header"
         );
     }
-    assert_eq!(driven.reports.last().unwrap().bytes, 128 * 512);
+    assert_eq!(
+        driven.reports.last().unwrap().bytes,
+        129 * 512,
+        "the end counts, as a stock server counts it"
+    );
     assert_eq!(server.poll(driven.now), Action::Done(Ok(())));
 }
 

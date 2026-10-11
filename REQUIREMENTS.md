@@ -220,7 +220,7 @@ Every field is big-endian. Each offset counts from the start of the message. [Th
 
 **P-19** When the caller sets an interval, the client and the server each report the bytes of every interval that ends while data moves, an empty one included. Bytes count toward the interval they arrived in. A test that ends inside an interval reports that last part before its final report. A UDP receiver adds the lost, out-of-order and datagram counts and the jitter of the interval.
 
-**P-20** At the end of a test, the client and the server each report the bytes and the duration. A UDP receiver adds the lost, out-of-order and datagram counts and the jitter. A UDP client adds the server report when one arrived.
+**P-20** At the end of a test, the client and the server each report the bytes and the duration. A UDP sender's bytes include its first end-of-test datagram, as a stock sender's do. A UDP receiver adds the lost, out-of-order and datagram counts and the jitter. A UDP client adds the server report when one arrived.
 
 ## Drivers
 

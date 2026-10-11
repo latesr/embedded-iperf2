@@ -18,10 +18,6 @@ exclude_re = [
     # The reset at the end of a burst is what lets BurstReader::received read on. Without it, every pass of the
     # loop reads 0 bytes, so the mutant can only loop for ever and no test can end it.
     'replace == with != in BurstReader::received',
-    # The driver reads what has arrived before each poll, so the core meets a peer's bytes and close in the orders
-    # a peer can make. Without it, the reads in each wait still deliver them, later. The core ends a test the same
-    # way for each order (ADR-0002), so no test can tell the two apart.
-    'embedded-iperf2/src/blocking.rs:.*: delete ! in run$',
 ]
 
 # The tests whose names start with `stock_` run a stock iperf for about ten seconds, and would run once for each

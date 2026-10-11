@@ -494,9 +494,10 @@ fn udp_ends_with_a_negative_id_and_repeats_it_until_the_report() {
     server.encode(&mut bytes).unwrap();
     client.received(10_300, &bytes);
     let last = report(client.poll(10_300));
+    // The end of the test counts once, as a stock client counts it, so the bytes equal the server report's.
     assert_eq!(
         (last.final_report, last.bytes, last.server),
-        (true, 1024, Some(server))
+        (true, 1536, Some(server))
     );
     assert_eq!(client.poll(10_300), Action::Done(Ok(())));
 }
@@ -511,6 +512,10 @@ fn udp_without_a_report_after_200_sends_ends_without_one() {
     assert_eq!(driven.now, 2_000_000);
     assert_eq!(driven.reports.len(), 1);
     assert_eq!(driven.reports[0].server, None);
+    assert_eq!(
+        driven.reports[0].bytes, 1024,
+        "one datagram, and 200 ends that count once"
+    );
     assert_eq!(driven.outcome, Ok(()), "P-4");
 }
 
@@ -764,7 +769,8 @@ fn an_interval_reports_the_bytes_sent_in_it() {
             (0, 1_000_000, 1000 * 512, false),
             (1_000_000, 2_000_000, 1000 * 512, false),
             (2_000_000, 3_000_000, 1000 * 512, false),
-            (0, 3_000_000, 3000 * 512, true)
+            // The end of the test goes out after the last interval closes, and counts in the final report.
+            (0, 3_000_000, 3001 * 512, true)
         ]
     );
 }
@@ -900,8 +906,8 @@ fn the_last_part_of_an_interval_is_reported_before_the_final_report() {
         [
             (0, 1_000_000, 1000 * 512, false),
             (1_000_000, 2_000_000, 1000 * 512, false),
-            (2_000_000, 2_500_000, 500 * 512, false),
-            (0, 2_500_000, 2500 * 512, true)
+            (2_000_000, 2_500_000, 501 * 512, false),
+            (0, 2_500_000, 2501 * 512, true)
         ],
         "P-19"
     );
