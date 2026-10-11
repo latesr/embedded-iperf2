@@ -138,6 +138,11 @@ impl<'b> Server<'b> {
         })
     }
 
+    /// The settings this server was made with.
+    pub fn config(&self) -> ServerConfig {
+        self.config
+    }
+
     /// What the caller does next, at `now_us`.
     pub fn poll(&mut self, now_us: u64) -> Action<'_> {
         self.now_us = now_us;

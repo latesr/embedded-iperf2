@@ -202,6 +202,18 @@ fn a_server_needs_room_for_a_burst_header_or_the_longest_reverse_datagram() {
 }
 
 #[test]
+fn a_server_returns_the_settings_it_was_made_with() {
+    let config = ServerConfig {
+        duration_us: Some(3),
+        interval_us: Some(5),
+        ipv6: true,
+        ..udp()
+    };
+    let mut buffer = [0; 1470];
+    assert_eq!(Server::new(config, &mut buffer).unwrap().config(), config);
+}
+
+#[test]
 fn tcp_acks_the_stock_header_and_counts_the_stream() {
     let sample = common::read("tcp");
     let mut buffer = [0; 2048];

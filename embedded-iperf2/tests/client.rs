@@ -214,6 +214,21 @@ fn a_udp_datagram_must_fit_the_buffer_and_hold_the_header() {
 }
 
 #[test]
+fn a_client_returns_the_settings_it_was_made_with() {
+    let config = Config {
+        reverse: true,
+        length: Length::Bytes(7),
+        buf_len: 100,
+        rate: 9,
+        interval_us: Some(11),
+        port: 13,
+        ..Config::udp()
+    };
+    let mut buffer = [0; 100];
+    assert_eq!(Client::new(config, &mut buffer).unwrap().config(), config);
+}
+
+#[test]
 fn the_defaults_are_those_of_a_stock_client() {
     let tcp = Config::tcp();
     assert_eq!(

@@ -6,6 +6,11 @@
 
 #![cfg_attr(not(test), no_std)]
 
+#[cfg(feature = "std")]
+extern crate std;
+
+#[cfg(feature = "std")]
+pub mod blocking;
 mod client;
 mod config;
 mod counts;

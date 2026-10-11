@@ -142,6 +142,11 @@ impl<'b> Client<'b> {
         })
     }
 
+    /// The settings this client was made with.
+    pub fn config(&self) -> Config {
+        self.config
+    }
+
     /// What the caller does next, at `now_us`.
     pub fn poll(&mut self, now_us: u64) -> Action<'_> {
         self.now_us = now_us;
