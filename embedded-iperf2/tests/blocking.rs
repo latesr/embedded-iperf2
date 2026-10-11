@@ -10,124 +10,16 @@
     clippy::arithmetic_side_effects
 )]
 
-use embedded_iperf2::blocking::{TcpServer, UdpServer, run_client};
+mod loopback;
+
+use embedded_iperf2::blocking::{TcpServer, UdpServer};
 use embedded_iperf2::wire::{Amount, PREFIX_LEN, Prefix, TestHeader, Timestamp};
-use embedded_iperf2::{Client, Config, Length, Report, Server, ServerConfig, TestError, Transport};
+use embedded_iperf2::{Config, Length, Server, ServerConfig, TestError, Transport};
+use loopback::{End, run, serve, server_config, spawn, start};
 use std::io::{ErrorKind, Read};
-use std::net::{SocketAddr, TcpListener, TcpStream, UdpSocket};
-use std::sync::mpsc;
+use std::net::{TcpListener, TcpStream, UdpSocket};
 use std::thread;
 use std::time::{Duration, Instant};
-
-/// Every report an end gave, and how its test ended.
-struct End {
-    reports: Vec<Report>,
-    outcome: Result<(), TestError>,
-}
-
-impl End {
-    fn last(&self) -> Report {
-        let last = *self.reports.last().expect("no report");
-        assert!(last.final_report, "the last report is not final");
-        last
-    }
-
-    fn intervals(&self) -> usize {
-        self.reports
-            .iter()
-            .filter(|report| !report.final_report)
-            .count()
-    }
-}
-
-fn server_config(transport: Transport) -> ServerConfig {
-    ServerConfig {
-        transport,
-        duration_us: None,
-        interval_us: None,
-        ipv6: false,
-    }
-}
-
-/// The longest any end of a test here may take. A driver that never ends fails its test after this, rather than
-/// hang it.
-const PATIENCE: Duration = Duration::from_secs(5);
-
-/// The result of work on another thread.
-struct Pending<T>(mpsc::Receiver<T>);
-
-impl<T> Pending<T> {
-    /// The result, or a panic when the work takes longer than `PATIENCE` or panicked.
-    fn get(self) -> T {
-        self.0
-            .recv_timeout(PATIENCE)
-            .unwrap_or_else(|error| panic!("the work did not end: {error}"))
-    }
-}
-
-fn spawn<T: Send + 'static>(work: impl FnOnce() -> T + Send + 'static) -> Pending<T> {
-    let (sender, receiver) = mpsc::channel();
-    thread::spawn(move || {
-        let _ = sender.send(work());
-    });
-    Pending(receiver)
-}
-
-/// Starts a server for one test on loopback, over IPv6 when `config` says so, and returns its address.
-fn serve(config: ServerConfig) -> (SocketAddr, Pending<End>) {
-    let host = if config.ipv6 {
-        "[::1]:0"
-    } else {
-        "127.0.0.1:0"
-    };
-    match config.transport {
-        Transport::Tcp => {
-            let listener = TcpListener::bind(host).unwrap();
-            let address = listener.local_addr().unwrap();
-            let end = spawn(move || {
-                let mut driver = TcpServer::new(listener);
-                let mut buffer = vec![0; 4096];
-                let mut server = Server::new(config, &mut buffer).unwrap();
-                let mut reports = Vec::new();
-                let outcome = driver
-                    .run_one(&mut server, |report| reports.push(*report))
-                    .unwrap();
-                End { reports, outcome }
-            });
-            (address, end)
-        }
-        Transport::Udp => {
-            let socket = UdpSocket::bind(host).unwrap();
-            let address = socket.local_addr().unwrap();
-            let end = spawn(move || {
-                let mut driver = UdpServer::new(socket);
-                let mut buffer = vec![0; 4096];
-                let mut server = Server::new(config, &mut buffer).unwrap();
-                let mut reports = Vec::new();
-                let outcome = driver
-                    .run_one(&mut server, |report| reports.push(*report))
-                    .unwrap();
-                End { reports, outcome }
-            });
-            (address, end)
-        }
-    }
-}
-
-/// Starts a client of `config` against `server`.
-fn start(config: Config, server: SocketAddr) -> Pending<End> {
-    spawn(move || {
-        let mut buffer = vec![0; 4096];
-        let mut client = Client::new(config, &mut buffer).unwrap();
-        let mut reports = Vec::new();
-        let outcome = run_client(&mut client, server, |report| reports.push(*report)).unwrap();
-        End { reports, outcome }
-    })
-}
-
-fn run(config: Config, server: SocketAddr) -> End {
-    start(config, server).get()
-}
 
 fn config(transport: Transport, reverse: bool, length: Length) -> Config {
     let base = match transport {

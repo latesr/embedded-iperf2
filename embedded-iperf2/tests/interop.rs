@@ -14,16 +14,15 @@
     clippy::arithmetic_side_effects
 )]
 
-use embedded_iperf2::blocking::{TcpServer, UdpServer, run_client};
-use embedded_iperf2::{Client, Config, Length, Report, Server, ServerConfig, Transport};
+mod loopback;
+
+use embedded_iperf2::{Config, Length, Report, Transport};
+use loopback::{run, serve, server_config};
 use std::net::{SocketAddr, TcpListener, UdpSocket};
 use std::process::{Child, Command, Stdio};
-use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
 
-/// The longest our end of one test may take.
-const PATIENCE: Duration = Duration::from_secs(15);
 /// The time a stock server gets to open its socket before our client starts.
 const SERVER_START: Duration = Duration::from_millis(500);
 /// The time a stock client gets to exit after our server ends the test.
@@ -219,17 +218,6 @@ fn agree(mode: Mode, ours_sends: bool, printed: &str, ours: &Report) {
     }
 }
 
-/// Runs `work` on its own thread, and panics when it takes longer than `PATIENCE`.
-fn within<T: Send + 'static>(work: impl FnOnce() -> T + Send + 'static) -> T {
-    let (sender, receiver) = mpsc::channel();
-    thread::spawn(move || {
-        let _ = sender.send(work());
-    });
-    receiver
-        .recv_timeout(PATIENCE)
-        .unwrap_or_else(|error| panic!("our end did not finish: {error}"))
-}
-
 fn free_port(transport: Transport) -> u16 {
     match transport {
         Transport::Tcp => TcpListener::bind("127.0.0.1:0")
@@ -255,79 +243,30 @@ fn stock_server_against_our_client() {
         }
         let stock = Stock::start(&args);
         thread::sleep(SERVER_START);
-        let server = SocketAddr::from(([127, 0, 0, 1], port));
-        let (outcome, last) = within(move || {
-            let mut buffer = vec![0; 4096];
-            let mut client = Client::new(mode.config(), &mut buffer).unwrap();
-            let mut last = None;
-            let outcome = run_client(&mut client, server, |report| last = Some(*report)).unwrap();
-            (outcome, last)
-        });
+        let ours = run(mode.config(), SocketAddr::from(([127, 0, 0, 1], port)));
         let printed = stock.interrupt();
-        assert_eq!(outcome, Ok(()), "{mode:?}");
-        agree(mode, !mode.reverse, &printed, &last.unwrap());
+        assert_eq!(ours.outcome, Ok(()), "{mode:?}");
+        agree(mode, !mode.reverse, &printed, &ours.last());
     }
 }
 
 #[test]
 fn stock_client_against_our_server() {
     for mode in modes() {
-        let config = ServerConfig {
-            transport: mode.transport,
-            duration_us: None,
-            interval_us: None,
-            ipv6: false,
-        };
-        let (port, ours) = match mode.transport {
-            Transport::Tcp => {
-                let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-                let port = listener.local_addr().unwrap().port();
-                let mut driver = TcpServer::new(listener);
-                (
-                    port,
-                    Box::new(
-                        move |server: &mut Server<'_>, report: &mut dyn FnMut(&Report)| {
-                            driver.run_one(server, report).unwrap()
-                        },
-                    )
-                        as Box<dyn FnOnce(&mut Server<'_>, &mut dyn FnMut(&Report)) -> _ + Send>,
-                )
-            }
-            Transport::Udp => {
-                let socket = UdpSocket::bind("127.0.0.1:0").unwrap();
-                let port = socket.local_addr().unwrap().port();
-                let mut driver = UdpServer::new(socket);
-                (
-                    port,
-                    Box::new(
-                        move |server: &mut Server<'_>, report: &mut dyn FnMut(&Report)| {
-                            driver.run_one(server, report).unwrap()
-                        },
-                    )
-                        as Box<dyn FnOnce(&mut Server<'_>, &mut dyn FnMut(&Report)) -> _ + Send>,
-                )
-            }
-        };
-        let ours = thread::spawn(move || {
-            let mut buffer = vec![0; 4096];
-            let mut server = Server::new(config, &mut buffer).unwrap();
-            let mut last = None;
-            let outcome = ours(&mut server, &mut |report| last = Some(*report));
-            (outcome, last)
-        });
+        let (address, ours) = serve(server_config(mode.transport));
         let mut args = vec![
             "-c".to_owned(),
             "127.0.0.1".to_owned(),
             "-p".to_owned(),
-            port.to_string(),
+            address.port().to_string(),
         ];
         args.extend(mode.client_args());
         let stock = Stock::start(&args);
-        let (outcome, last) = within(move || ours.join().unwrap());
+        let ours = ours.get();
         // A stock client of a reverse UDP test in byte mode prints its report and then never exits, so `finish`
         // interrupts it.
         let printed = stock.finish();
-        assert_eq!(outcome, Ok(()), "{mode:?}");
-        agree(mode, mode.reverse, &printed, &last.unwrap());
+        assert_eq!(ours.outcome, Ok(()), "{mode:?}");
+        agree(mode, mode.reverse, &printed, &ours.last());
     }
 }
