@@ -1,12 +1,12 @@
 //! The driver for a host: it runs a [`Client`] or a [`Server`] over the standard library's blocking sockets (D-2).
 //!
-//! The caller makes the client or the server, and the driver moves its bytes until the test ends. The time is
-//! the microseconds since the call began, from [`Instant`] (D-5). Each report goes to `on_report` as the core
-//! returns it, so a tool can print each interval while the test runs.
+//! The caller makes the client or the server, and the driver reads and writes the socket for it until the test
+//! ends. The time is the microseconds since the call began, from [`Instant`] (D-5). Each report goes to
+//! `on_report` as the core returns it, so a tool can print each interval while the test runs.
 //!
 //! Each turn of the loop first reads what has arrived without blocking, then polls. A peer's bytes or close can
 //! then reach the core before it sends again, in any of its states. A wait reads with a timeout of at most
-//! 100 ms. Before each read, the TCP server closes each connection that arrived while the test runs (P-14).
+//! 100 ms. Before each read, the TCP server closes one connection that arrived while the test runs (P-14).
 //!
 //! A write that the peer refuses with a reset or a broken pipe reaches the core as a close (P-24, P-16).
 
@@ -285,13 +285,15 @@ impl<'l> TcpLink<'l> {
         Ok(Self { stream, listener })
     }
 
-    /// Closes each connection that waits on the listener. A failed accept ends the refusals until the next turn,
-    /// and does not end the test that runs.
+    /// Closes one connection that waits on the listener, if there is one. A failed accept does not end the test
+    /// that runs.
     fn refuse_waiting(&self) {
-        if let Some(listener) = self.listener {
-            while let Ok((stream, _)) = listener.accept() {
-                drop(stream);
-            }
+        // One a turn, so that clients that connect faster than the loop turns cannot stall the test. The kernel
+        // drops connections beyond its listen backlog.
+        if let Some(listener) = self.listener
+            && let Ok((stream, _)) = listener.accept()
+        {
+            drop(stream);
         }
     }
 }
@@ -465,6 +467,25 @@ mod tests {
 
     fn kind<T: core::fmt::Debug>(result: io::Result<T>) -> ErrorKind {
         result.unwrap_err().kind()
+    }
+
+    #[test]
+    fn a_tcp_server_refuses_one_waiting_connection_per_turn() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let _client = TcpStream::connect(address).unwrap();
+        let (served, _) = listener.accept().unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let _waiting: Vec<TcpStream> = (0..3)
+            .map(|_| TcpStream::connect(address).unwrap())
+            .collect();
+        let link = TcpLink::new(served, Some(&listener)).unwrap();
+        link.refuse_waiting();
+        let mut left = 0;
+        while listener.accept().is_ok() {
+            left += 1;
+        }
+        assert_eq!(left, 2);
     }
 
     #[test]
