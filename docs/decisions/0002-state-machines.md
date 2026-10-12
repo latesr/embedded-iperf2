@@ -6,7 +6,7 @@ Covers: `Client` and `Server` in `embedded-iperf2`, and the modules under them: 
 
 ## Summary
 
-- The core does no I/O and keeps no time. The caller passes the time in as microseconds, writes what `poll` asks for, and passes in what the peer sends (D-5).
+- The core doesn't do I/O and doesn't keep time. The caller passes the time in as microseconds, writes what `poll` asks for, and passes in what the peer sends (D-5).
 - One `Client` and one `Server` each serve TCP and UDP, forward and reverse. The four roles of sender and receiver stay inside.
 - The caller supplies the buffer each chunk or datagram is built in. The core does not allocate (D-1).
 - The driver keeps a UDP server to the peer of its first datagram, and drops a refused flow (D-6).
@@ -30,7 +30,7 @@ The order of events reaches the core in many ways. A driver may read before it w
 
 The caller passes a buffer at construction, and each `Send` borrows from it. A TCP chunk is as long as the buffer. A UDP datagram is `buf_len` bytes, and the constructor refuses a buffer that cannot hold one.
 
-A UDP server does not keep an address. The stock server connects its socket to the first datagram's sender. A driver does the same, so the core never names an address type.
+A UDP server does not keep an address. The stock server connects its socket to the first datagram's sender. A driver does the same, or drops datagrams from other sources when its socket can't disconnect. The core never names an address type.
 
 Jitter uses `J += (D - J) / 16` on `i64` nanoseconds. It can differ from the stock `double` in the last nanosecond. P-17 compares only the counts.
 
@@ -48,7 +48,7 @@ Interval reports follow the bytes. `received` closes an interval that is due bef
 
 - **Four public role machines.** Rejected: a driver must read the header before it knows the role.
 - **An async core over embedded-io-async.** Rejected in the plan: UDP datagrams do not fit `Read` and `Write`, and a host test tool would need an executor.
-- **A peer address in each `received`.** Rejected: it brings an address type into the core for a rule the driver's socket enforces anyway.
+- **A peer address in each `received`.** Rejected: it brings an address type into the core for a rule the driver enforces anyway.
 - **`f64` jitter.** Rejected for the cost the Context states.
 - **Intervals closed only in `poll`.** It was the first version. A driver that reads before it polls counted bytes in the interval before the one they arrived in.
 - **A close in the middle of a test as a protocol error.** It was the first version. A client in byte mode closes as soon as it has its bytes, which can be before the server's next poll, so a normal test ended in an error.
