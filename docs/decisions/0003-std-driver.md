@@ -27,7 +27,7 @@ The stock server connects its UDP socket to its first client, and the kernel the
 
 `run_client`, `TcpServer::run_one` and `UdpServer::run_one` take the client or server by `&mut`, and block on the caller's thread until the test ends. Each returns `io::Result<Result<(), TestError>>`. The outer error is the socket's, and the inner one is the test's.
 
-Each turn of the driver's loop reads whatever has arrived without blocking, then calls `poll`. When the core waits, the driver reads with a timeout instead of sleeping. While a test runs, the TCP server accepts and closes one waiting connection per turn. Closing all of them could stall the test if clients connect faster than the loop turns. The rustdoc of `blocking.rs` gives the timeouts and how each socket error reaches the core.
+Each turn of the driver's loop reads whatever has arrived without blocking, then calls `poll`. When the core waits, the driver reads with a timeout instead of sleeping. While a test runs, the TCP server accepts and closes one waiting connection per turn. Closing all of them would stall the test when clients connect faster than the loop turns. The rustdoc of `blocking.rs` gives the timeouts and how each socket error reaches the core.
 
 The UDP server reads with `recv_from` and replies with `send_to`. It takes the source of the first datagram as its client, and drops datagrams from other sources until the test ends.
 
@@ -36,7 +36,7 @@ The UDP server reads with `recv_from` and replies with `send_to`. It takes the s
 - **The driver creates the client or server from a `Config`.** Rejected, because every caller would have to handle a settings error on every run.
 - **An async driver on tokio.** Rejected, because it adds a dependency and nothing needs to run in parallel.
 - **Only read while the core waits.** Rejected, because a sender without a rate limit misses the peer closing and a second client connecting. A reverse TCP test at rate 0 shows it.
-- **A second thread that reads.** This works, but it adds a thread and a channel to do what one read before each poll already does.
+- **A second thread that reads.** Rejected, because one read before each poll does the same without a thread and a channel.
 - **A connected UDP socket.** Rejected, because `std` can't disconnect it.
 
 ## Consequences
