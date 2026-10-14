@@ -15,6 +15,10 @@ mod client;
 mod config;
 mod counts;
 mod datagram;
+#[cfg(feature = "embassy-net")]
+pub mod embassy;
+#[cfg(any(feature = "std", feature = "embassy-net"))]
+mod machine;
 mod meter;
 mod report;
 mod server;

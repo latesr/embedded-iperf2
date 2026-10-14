@@ -9,6 +9,9 @@ use std::process::Command;
 /// The crates that are published to crates.io and must build for every target in `rust-toolchain.toml`.
 const PUBLISHED: &[&str] = &["embedded-iperf2"];
 
+/// The features that only a board turns on, so only a cross build compiles them for a board's target.
+const BOARD_FEATURES: &[&str] = &["embassy-net"];
+
 /// Runs each check in turn and stops at the first failure.
 pub fn run(root: &Path) -> Result<(), String> {
     let targets = toolchain_targets(root)?;
@@ -71,7 +74,7 @@ pub fn run(root: &Path) -> Result<(), String> {
             "--no-dev-deps",
         ]),
     )?;
-    for (target, args) in cross_builds(&targets, PUBLISHED) {
+    for (target, args) in cross_builds(&targets, PUBLISHED, BOARD_FEATURES) {
         step(&format!("build for {target}"), cargo(root).args(args))?;
     }
     step(
@@ -87,23 +90,32 @@ pub fn run(root: &Path) -> Result<(), String> {
     Ok(())
 }
 
-/// The `cargo` arguments that build the published crates for each target. With no published crates there is
-/// nothing to build, and `cargo build` without `--package` would build `xtask` for a microcontroller.
-fn cross_builds(targets: &[String], published: &[&str]) -> Vec<(String, Vec<String>)> {
+/// The `cargo` arguments that build the published crates for each target, once without features and once with
+/// each of `features`, each named for its step. With no published crates there is nothing to build, and
+/// `cargo build` without `--package` would build `xtask` for a microcontroller.
+fn cross_builds(
+    targets: &[String],
+    published: &[&str],
+    features: &[&str],
+) -> Vec<(String, Vec<String>)> {
     if published.is_empty() {
         return Vec::new();
     }
-    targets
-        .iter()
-        .map(|target| {
-            let mut args = vec!["build".to_owned(), "--target".to_owned(), target.clone()];
-            for crate_name in published {
-                args.push("--package".to_owned());
-                args.push((*crate_name).to_owned());
-            }
-            (target.clone(), args)
-        })
-        .collect()
+    let mut builds = Vec::new();
+    for target in targets {
+        let mut args = vec!["build".to_owned(), "--target".to_owned(), target.clone()];
+        for crate_name in published {
+            args.push("--package".to_owned());
+            args.push((*crate_name).to_owned());
+        }
+        builds.push((target.clone(), args.clone()));
+        for feature in features {
+            let mut with = args.clone();
+            with.extend(["--features".to_owned(), (*feature).to_owned()]);
+            builds.push((format!("{target} with {feature}"), with));
+        }
+    }
+    builds
 }
 
 /// A `cargo` command that runs in the workspace root.
@@ -160,13 +172,13 @@ mod tests {
 
     #[test]
     fn nothing_is_cross_built_without_a_published_crate() {
-        assert_eq!(cross_builds(&targets(), &[]), Vec::new());
+        assert_eq!(cross_builds(&targets(), &[], &["f"]), Vec::new());
     }
 
     #[test]
-    fn each_target_builds_every_published_crate() {
-        let args = |target: &str| {
-            [
+    fn each_target_builds_every_published_crate_without_features_and_with_each_board_feature() {
+        let args = |target: &str, feature: Option<&str>| {
+            let mut args = [
                 "build",
                 "--target",
                 target,
@@ -176,16 +188,23 @@ mod tests {
                 "b",
             ]
             .map(str::to_owned)
-            .to_vec()
+            .to_vec();
+            if let Some(feature) = feature {
+                args.extend(["--features".to_owned(), feature.to_owned()]);
+            }
+            args
         };
+        let thumb = "thumbv6m-none-eabi";
+        let riscv = "riscv32imac-unknown-none-elf";
         assert_eq!(
-            cross_builds(&targets(), &["a", "b"]),
+            cross_builds(&targets(), &["a", "b"], &["f", "g"]),
             vec![
-                ("thumbv6m-none-eabi".to_owned(), args("thumbv6m-none-eabi")),
-                (
-                    "riscv32imac-unknown-none-elf".to_owned(),
-                    args("riscv32imac-unknown-none-elf")
-                ),
+                (thumb.to_owned(), args(thumb, None)),
+                (format!("{thumb} with f"), args(thumb, Some("f"))),
+                (format!("{thumb} with g"), args(thumb, Some("g"))),
+                (riscv.to_owned(), args(riscv, None)),
+                (format!("{riscv} with f"), args(riscv, Some("f"))),
+                (format!("{riscv} with g"), args(riscv, Some("g"))),
             ]
         );
     }
