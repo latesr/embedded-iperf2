@@ -14,7 +14,7 @@
 //! After a UDP test that did not fail, the driver waits up to 1 s for the stack to send the datagrams left in the
 //! socket.
 //! After a TCP test, the driver closes the socket. It waits up to 1 s for the peer's FIN, and up to 1 s for its own
-//! FIN to be acknowledged. When the peer closed first, it waits 20 ms more, so the stack sends its last ACK. It
+//! FIN to be acknowledged. When it closed first, it waits 20 ms more, so the stack sends its last ACK. It
 //! aborts the connection only when it is still open. The caller can then use the socket again, or drop it.
 //!
 //! While a test runs, the server's socket holds the connection and nothing listens on the port, so the stack
