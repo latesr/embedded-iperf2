@@ -11,6 +11,7 @@ pub mod links;
 mod mutants;
 pub mod prose;
 mod renumber;
+pub mod toolchain;
 
 use clap::Subcommand;
 use std::path::{Path, PathBuf};

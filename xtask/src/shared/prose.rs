@@ -91,6 +91,8 @@ const WARNED: &[(&str, &[&str])] = &[
             ", that is,",
             "this means",
             "needs no",
+            "does no",
+            "keeps no",
         ],
     ),
     ("far reference", &["the former", "the latter", "one whose"]),
@@ -1038,6 +1040,18 @@ mod tests {
                 found(5, "\"in order to\" (filler)"),
                 found(5, "\"actually\" (hedging)"),
                 found(7, "\"the latter\" (far reference)"),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_negated_noun_after_do_or_keep_is_reported_and_other_verbs_are_not() {
+        let markdown = "The parser does no I/O.\n\nThe agent keeps no memory.\n\nThe board sends no RST. It does not need one, and keeps nothing.\n";
+        assert_eq!(
+            warn(markdown, &every),
+            vec![
+                found(1, "\"does no\" (restating)"),
+                found(3, "\"keeps no\" (restating)"),
             ]
         );
     }

@@ -20,7 +20,7 @@ pub fn run(root: &Path, seconds: u64) -> Result<(), String> {
     let status = Command::new("cargo")
         .current_dir(root)
         .args([
-            "+nightly",
+            &format!("+{}", crate::shared::toolchain::NIGHTLY),
             "fuzz",
             "run",
             TARGET,

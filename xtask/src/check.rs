@@ -18,6 +18,8 @@ pub fn run(root: &Path) -> Result<(), String> {
     shared::links::run(root)?;
     println!("==> prose");
     shared::prose::run(root, None)?;
+    println!("==> toolchain");
+    shared::toolchain::check(root)?;
     // The root workspace is the one group. No code reads a markdown file at run time, so it names no markdown path.
     if only_markdown(&changed_paths(root), &[]) {
         println!("==> every cargo check skipped, because the change is only markdown");

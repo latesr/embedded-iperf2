@@ -166,7 +166,7 @@ One command runs every check. `cargo xtask check` is the entry point. The `xtask
 
 `AGENTS.md` lists the checks and commands that one repo adds.
 
-- `rust-toolchain.toml` pins the stable toolchain that CI uses.
+- `xtask/src/shared/toolchain.rs` names the stable toolchain and the nightly that the fuzzer and `-Zbuild-std` builds use. `rust-toolchain.toml` and every CI job install those two, and `cargo xtask check` fails when they differ. Both move together, each to its latest, when a new stable is released.
 - `cargo xtask check` runs the feature powerset at `--depth 2`, which covers each feature alone and each pair. The nightly CI job runs the full powerset.
 - `cargo xtask` runs from the repo root. A firmware folder sets a microcontroller target, so Cargo there would try to build `xtask` for the microcontroller.
 - `cargo xtask mutants` runs cargo-mutants over a diff, with every feature on, so a test behind a feature runs. `--staged` takes the staged changes against `HEAD`. Without it, the diff is the working tree against `--base`, which defaults to `HEAD`. It builds and tests a few mutants at once, the cores divided by three and at most three, as the cargo-mutants book advises, and prints the count. It is not part of `cargo xtask check`, because it is slow. The hook runs it after the check. The full run over every crate stays a manual command and a nightly job. `.cargo/mutants.toml` excludes the files that only start other programs, and the mutants that can only time out, and says why.
@@ -250,9 +250,9 @@ An ADR records a decision about the product, or about how it is built, tested an
 
 One ADR covers one mechanism, such as reconnect or factory reset, and every decision inside it. It is written when the step that builds the mechanism is done and reviewed. Until then the plan holds the step's decisions.
 
-A choice belongs in an ADR when a competent newcomer would propose the option it rejected. A parameter, a name, an error variant or a choice without a second option does not. A Summary bullet states a rule and cites the requirement IDs it meets. It does not restate a requirement, a number, a signature or a default.
+A choice belongs in an ADR when a competent newcomer would propose the option it rejected. A parameter, a name, an error variant or a choice without a second option does not. A Summary bullet states the rule in one sentence, and what the rule makes happen in a second. It cites the requirement IDs it meets, and leaves rejected options to Alternatives. It does not restate a requirement, a number, a signature or a default.
 
-ADRs live at `docs/decisions/NNNN-slug.md`. Each opens with `# ADR-NNNN: <the decision>` and a bold status line: `**Status: accepted**`, `**Status: proposed**` or `**Status: superseded by ADR-NNNN**`. A `## Summary` section follows, with one bullet per decision as it stands. The Context, Decision, Alternatives and Consequences follow the Summary. A new ADR gets its row in the index in `docs/README.md` in the same commit.
+ADRs live at `docs/decisions/NNNN-slug.md`. Each opens with `# ADR-NNNN: <the mechanism>`, such as `# ADR-0004: Reconnect`, and a bold status line: `**Status: accepted**`, `**Status: proposed**` or `**Status: superseded by ADR-NNNN**`. A `## Summary` section follows, with one bullet per decision as it stands. The Context, Decision, Alternatives and Consequences follow the Summary. A new ADR gets its row in the index in `docs/README.md` in the same commit.
 
 - The Context states the problem in enough detail that a newcomer could judge the decision from it. Where a newcomer's first answer does not work here, it says why, without calling that answer obvious.
 - An ADR states a rule. It doesn't state a list of cases, as they will go stale.
@@ -350,7 +350,7 @@ When someone says "cut the commentary", remove commentary from the whole draft, 
 - Write "has" or "holds" for what a record, message, event or struct contains. Keep "carries" for something that moves: a port carries signals, a count carries across a reconnect.
 - Do not use an idiom or a phrasal verb where a plain word exists. Write "continue", not "carry on". Write a new sentence, not "on the other hand".
 - Introduce an abbreviation in full on first use, with the short form in brackets: Architectural Decision Record (ADR). Abbreviations every engineer knows, such as API, do not need this.
-- Prefer "does not need" to "needs no".
+- Negate the verb, not the noun. Write "does not need" and "doesn't do I/O", not "needs no" and "does no I/O".
 - A table cell holds one fact or a short list. Anything longer goes in prose under a heading, and the cell links to it.
 - Say what an ID refers to on first mention: "PR #6192, the retry logic".
 - Write dates as YYYY-MM-DD.
