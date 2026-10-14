@@ -7,9 +7,12 @@
 //! Each turn of the loop first takes what has arrived without waiting, then polls. A wait reads until something
 //! arrives or the core's deadline passes. embassy-net reports the peer's FIN as `ConnectionReset`, as it reports a
 //! RST, so both reach the core as a close. A TCP write waits at most 100 ms, so a full send buffer does not stop
-//! the reads. A TCP connection waits at most 5 s.
+//! the reads. On a board, that is also the longest the driver takes to see a close while it writes. The read
+//! without waiting leaves a waker on the socket that does nothing. A UDP send waits at most 1 s for room, and then
+//! ends the run with `SendTimedOut`. A TCP connection waits at most 5 s.
 //!
-//! After a UDP test, the driver waits up to 1 s for the stack to send the datagrams left in the socket.
+//! After a UDP test that did not fail, the driver waits up to 1 s for the stack to send the datagrams left in the
+//! socket.
 //! After a TCP test, the driver closes the socket. It waits up to 1 s for the peer's FIN, and up to 1 s for its own
 //! FIN to be acknowledged. When the peer closed first, it waits 20 ms more, so the stack sends its last ACK. It
 //! aborts the connection only when it is still open. The caller can then use the socket again, or drop it.
@@ -29,6 +32,9 @@ use embassy_time::{Duration, Instant, Timer};
 
 /// The longest a TCP write waits for room in the send buffer.
 const LONGEST_WRITE: Duration = Duration::from_millis(100);
+/// The longest a UDP send waits for room in the send buffer. The core counts the end of a UDP test by its sends,
+/// so a send that never leaves would hold the test for ever.
+const SEND_TIMEOUT: Duration = Duration::from_secs(1);
 /// The longest a wait sleeps once the peer has closed, before the loop turns again.
 const LONGEST_SLEEP: Duration = Duration::from_millis(100);
 /// The longest a client waits for a TCP connection.
@@ -36,9 +42,10 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 /// The longest each step of a TCP close waits for the peer.
 const CLOSE_TIMEOUT: Duration = Duration::from_secs(1);
 /// How long a socket in TIME-WAIT stays with the stack, so the stack sends the ACK of the peer's FIN. smoltcp
-/// delays an ACK by 10 ms, and embassy-net 0.9.1 cannot turn the delay off. A socket that the caller drops before
-/// then never sends the ACK, and the peer waits for it.
-const LAST_ACK_WAIT: Duration = Duration::from_millis(20);
+/// delays an ACK by 10 ms, and embassy-net 0.9.1 cannot turn the delay off. A socket that the caller drops, or
+/// that accepts again, before then never sends the ACK, and the peer waits for it. `listen` resets the socket's
+/// ACK timer.
+const DELAYED_ACK_WAIT: Duration = Duration::from_millis(20);
 
 /// Why a run failed before or outside its test.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -49,6 +56,8 @@ pub enum Error {
     Accept(AcceptError),
     /// A UDP datagram could not be sent.
     Send(SendError),
+    /// The socket's send buffer had no room for 1 s, so the link is down or the stack is stuck.
+    SendTimedOut,
     /// The socket or the settings do not fit the test. The function that returns it names each case.
     Mismatch,
 }
@@ -89,7 +98,7 @@ pub async fn run_tcp_client(
 ///
 /// The driver passes the client only the datagrams from `server`. Returns `Mismatch` when `client` is not a UDP
 /// client, when `socket` is not bound, or when its send buffer cannot hold one datagram. Returns `Send` when a
-/// datagram cannot be sent.
+/// datagram cannot be sent, and `SendTimedOut` when the send buffer has no room for 1 s.
 pub async fn run_udp_client(
     client: &mut Client<'_>,
     socket: &mut UdpSocket<'_>,
@@ -108,9 +117,9 @@ pub async fn run_udp_client(
         peer: Some(server),
         refused: None,
     };
-    let outcome = run(client, &mut link, on_report).await;
+    let outcome = run(client, &mut link, on_report).await?;
     flush(socket).await;
-    outcome
+    Ok(outcome)
 }
 
 /// A TCP server that runs one test at a time on one socket.
@@ -174,7 +183,7 @@ impl<'s> UdpServer<'s> {
     ///
     /// Returns `Mismatch` when `server` is not a UDP server, when its `ipv6` is set, or when the socket is not
     /// bound. Returns `Send` when a datagram cannot be sent, such as a reverse test's datagram that is longer than
-    /// the socket's send buffer.
+    /// the socket's send buffer. Returns `SendTimedOut` when the send buffer has no room for 1 s.
     pub async fn run_one(
         &mut self,
         server: &mut Server<'_>,
@@ -189,13 +198,11 @@ impl<'s> UdpServer<'s> {
             peer: None,
             refused: self.refused,
         };
-        let outcome = run(server, &mut link, on_report).await;
-        let peer = link.peer;
-        flush(&mut self.socket).await;
-        let outcome = outcome?;
+        let outcome = run(server, &mut link, on_report).await?;
         if outcome == Err(TestError::Refused) {
-            self.refused = peer;
+            self.refused = link.peer;
         }
+        flush(&mut self.socket).await;
         Ok(outcome)
     }
 }
@@ -280,13 +287,12 @@ async fn end(socket: &mut TcpSocket<'_>) {
     let drain = async { while socket.read_with(|bytes| (bytes.len(), ())).await.is_ok() {} };
     let _ = select(drain, Timer::after(CLOSE_TIMEOUT)).await;
     let _ = select(socket.flush(), Timer::after(CLOSE_TIMEOUT)).await;
-    match socket.state() {
-        State::Closed => {}
-        State::TimeWait => Timer::after(LAST_ACK_WAIT).await,
-        _ => {
-            socket.abort();
-            let _ = select(socket.flush(), Timer::after(CLOSE_TIMEOUT)).await;
-        }
+    if socket.state() == State::TimeWait {
+        Timer::after(DELAYED_ACK_WAIT).await;
+    } else {
+        // A socket that closed cleanly from LAST-ACK has no peer left, so the abort sends nothing.
+        socket.abort();
+        let _ = select(socket.flush(), Timer::after(CLOSE_TIMEOUT)).await;
     }
 }
 
@@ -356,11 +362,11 @@ impl Link for UdpLink<'_, '_> {
 
     async fn write(&mut self, bytes: &[u8]) -> Result<Written, Error> {
         // The core sends only after the peer's first datagram, which sets `peer`.
-        let peer = self.peer.ok_or(Error::Send(SendError::NoRoute))?;
-        self.socket
-            .send_to(bytes, peer)
-            .await
-            .map_err(Error::Send)?;
+        let peer = self.peer.ok_or(Error::Mismatch)?;
+        match select(self.socket.send_to(bytes, peer), Timer::after(SEND_TIMEOUT)).await {
+            Either::First(sent) => sent.map_err(Error::Send)?,
+            Either::Second(()) => return Err(Error::SendTimedOut),
+        }
         Ok(Written::Bytes(bytes.len()))
     }
 

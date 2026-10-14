@@ -13,6 +13,7 @@
 mod stacks;
 
 use embassy_futures::join::{join, join3};
+use embassy_net::Ipv4Address;
 use embassy_net::tcp::ConnectError;
 use embassy_time::{Duration, Instant, Timer};
 use embedded_iperf2::embassy::{Error, TcpServer, UdpServer, run_tcp_client, run_udp_client};
@@ -426,5 +427,36 @@ fn a_udp_client_runs_with_a_send_buffer_of_one_datagram() {
         .await;
         assert_eq!(client.outcome, Ok(Ok(())));
         assert_eq!(server.last().bytes, 5_120 + 512);
+    });
+}
+
+#[test]
+fn a_udp_client_whose_datagrams_cannot_leave_ends_with_an_error_after_a_second() {
+    // Nobody on the link holds this address, so ARP never resolves and smoltcp keeps every datagram in the
+    // socket's buffer, as it would with the link down.
+    let nobody = Ipv4Address::new(10, 0, 0, 9);
+    run(async move |net| {
+        let mut buffers = UdpBuffers::with_send_buffer(1024);
+        let mut buffer = vec![0; 4096];
+        let config = Config {
+            length: Length::Bytes(51_200),
+            buf_len: 512,
+            ..Config::udp()
+        };
+        let mut client = Client::new(config, &mut buffer).unwrap();
+        let started = Instant::now();
+        let outcome = run_udp_client(
+            &mut client,
+            &mut buffers.bound(net.client, 0),
+            (nobody, PORT).into(),
+            |_| {},
+        )
+        .await;
+        let took = since(started);
+        assert_eq!(outcome, Err(Error::SendTimedOut));
+        assert!(
+            took >= Duration::from_secs(1) && took < Duration::from_secs(2),
+            "{took:?}"
+        );
     });
 }

@@ -159,7 +159,8 @@ fn stack_config(address: Ipv4Address) -> NetConfig {
 /// than `PATIENCE`.
 ///
 /// The stacks and the test run on a thread of their own, and this thread watches the clock. A driver that loops
-/// without yielding stops the executor and its timers, so only another thread can see that it never ends.
+/// without yielding stops the executor and its timers, so only another thread can see that it never ends. After a
+/// timeout that thread runs on until the test process ends.
 pub fn run<T: Send + 'static>(test: impl AsyncFnOnce(&Net<'_>) -> T + Send + 'static) -> T {
     let (sender, receiver) = mpsc::channel();
     thread::spawn(move || {
