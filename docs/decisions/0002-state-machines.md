@@ -9,7 +9,7 @@ Covers: `Client` and `Server` in `embedded-iperf2`, and the modules under them: 
 - The core doesn't do I/O and doesn't keep time. The caller gives it the time in microseconds, writes what `poll` asks for, and passes in what the peer sent, so the same core runs on a board and on a host (D-5).
 - One `Client` and one `Server` serve TCP and UDP, forward and reverse. A driver handles two types, and never has to know the role of a test before it reads the header.
 - The caller supplies the buffer that each chunk or datagram is built in. The core doesn't allocate (D-1).
-- A TCP sender fills its buffer once and then rewrites only the header bytes at its start, as the stock iperf does. A chunk then costs the sender almost nothing beyond the socket's copy, so a board measures its network rather than the sender.
+- A sender fills its buffer once and then rewrites only the header bytes at its start: the test or burst header of a TCP chunk, and the prefix and header of a UDP datagram. The stock iperf does the same. A chunk or datagram then costs the sender almost nothing beyond the socket's copy, so a board measures its network rather than the sender.
 - A UDP server only sees the datagrams of its first client, and the driver enforces that. The core never holds an address, so it doesn't depend on the address type of any network stack (D-6).
 - Jitter is kept in integer nanoseconds. A board without an FPU would pay for a floating point update on every datagram (P-17, P-18).
 - Bytes count toward the interval they arrived in, not the interval of the next `poll`. A driver that reads before it polls then reports each interval as the stock iperf does (P-19).

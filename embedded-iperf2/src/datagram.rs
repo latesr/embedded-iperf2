@@ -18,6 +18,9 @@ pub(crate) struct UdpSender {
     next_id: i64,
     sent_bytes: u64,
     start_us: Option<u64>,
+    /// Whether the buffer holds the fill. The sender fills it once and then rewrites only the prefix and the
+    /// header, so nothing else may write the buffer while the sender sends.
+    filled: bool,
 }
 
 impl UdpSender {
@@ -40,6 +43,7 @@ impl UdpSender {
             next_id: 1,
             sent_bytes: 0,
             start_us: None,
+            filled: false,
         }
     }
 
@@ -89,7 +93,7 @@ impl UdpSender {
 
     /// Builds the end of the test in `buffer`: the datagram with packet ID `-N` and then `-(N + repeat)` (W-3),
     /// as long as a datagram of data. Returns its length.
-    pub(crate) fn end(&self, repeat: u32, now_us: u64, buffer: &mut [u8]) -> usize {
+    pub(crate) fn end(&mut self, repeat: u32, now_us: u64, buffer: &mut [u8]) -> usize {
         let id = self
             .next_id
             .saturating_add(i64::from(repeat))
@@ -100,16 +104,19 @@ impl UdpSender {
 
     /// Builds the datagram that asks for a reverse test in `buffer`: packet ID 1 and the header (P-6). Returns
     /// its length.
-    pub(crate) fn ask(&self, now_us: u64, buffer: &mut [u8]) -> usize {
+    pub(crate) fn ask(&mut self, now_us: u64, buffer: &mut [u8]) -> usize {
         self.build(buffer, 1, self.len, now_us);
         self.len
     }
 
-    fn build(&self, buffer: &mut [u8], id: i64, length: usize, now_us: u64) {
+    fn build(&mut self, buffer: &mut [u8], id: i64, length: usize, now_us: u64) {
+        if !self.filled {
+            fill(buffer.get_mut(..self.len).unwrap_or_default());
+            self.filled = true;
+        }
         let Some(datagram) = buffer.get_mut(..length) else {
             return;
         };
-        fill(datagram);
         let prefix = Prefix {
             packet_id: id,
             sent: timestamp(now_us),
@@ -117,6 +124,43 @@ impl UdpSender {
         let _ = prefix.encode(datagram);
         if let (Some(header), Some(rest)) = (self.header, datagram.get_mut(PREFIX_LEN..)) {
             let _ = header.encode(rest);
+        }
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::arithmetic_side_effects)]
+mod tests {
+    use super::*;
+
+    fn send(sender: &mut UdpSender, buffer: &mut [u8]) -> usize {
+        match sender.poll(0, buffer) {
+            Next::Send(length) => length,
+            next => panic!("{next:?}"),
+        }
+    }
+
+    #[test]
+    fn a_sender_keeps_its_fill_between_datagrams() {
+        let mut sender = UdpSender::new(100, None, Stop::Bytes(1000), 0);
+        let mut buffer = [0; 100];
+        let length = send(&mut sender, &mut buffer);
+        sender.sent(length);
+        buffer[99] = b'X';
+        assert_eq!(send(&mut sender, &mut buffer), 100);
+        assert_eq!(buffer[99], b'X');
+    }
+
+    #[test]
+    fn each_datagram_has_its_own_prefix_and_fill_after_it() {
+        let mut sender = UdpSender::new(100, None, Stop::Bytes(1000), 0);
+        let mut buffer = [0; 100];
+        let length = send(&mut sender, &mut buffer);
+        sender.sent(length);
+        send(&mut sender, &mut buffer);
+        assert_eq!(Prefix::parse(&buffer).unwrap().packet_id, 2);
+        for (at, byte) in buffer.iter().enumerate().skip(PREFIX_LEN) {
+            assert_eq!(*byte, b'0' + (at % 10) as u8, "byte {at}");
         }
     }
 }
