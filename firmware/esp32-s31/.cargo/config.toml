@@ -11,3 +11,5 @@ rustflags = [
 
 [env]
 DEFMT_LOG = "info"
+# esp-hal includes the build script's rwtext_hook.x in .rwtext.
+ESP_HAL_CONFIG_USE_RWTEXT_LD_HOOK = "true"

@@ -7,6 +7,9 @@
 mod common;
 const NAME: &str = "s31";
 const IPERF_SOCKET: usize = 65536;
+/// The send buffer, smaller than the devkit's so that the network's code fits in RAM beside it. A reverse test
+/// only sends the 64-byte header.
+const IPERF_SEND: usize = 16384;
 const IPERF_WORK: usize = 8192;
 
 use board::{boot_count, embassy, ethernet, info, init, psram, reset};
@@ -23,9 +26,9 @@ use static_cell::ConstStaticCell;
 static RINGS: ConstStaticCell<EthernetDmaStorage<45, 45>> =
     ConstStaticCell::new(EthernetDmaStorage::new());
 
-/// `net iperf`'s socket receive and send buffers, and the client's work buffer, at the board's sizes.
-static IPERF: ConstStaticCell<([u8; IPERF_SOCKET], [u8; IPERF_SOCKET], [u8; IPERF_WORK])> =
-    ConstStaticCell::new(([0; IPERF_SOCKET], [0; IPERF_SOCKET], [0; IPERF_WORK]));
+/// `net iperf`'s socket receive and send buffers, and the client's work buffer.
+static IPERF: ConstStaticCell<([u8; IPERF_SOCKET], [u8; IPERF_SEND], [u8; IPERF_WORK])> =
+    ConstStaticCell::new(([0; IPERF_SOCKET], [0; IPERF_SEND], [0; IPERF_WORK]));
 
 #[esp_hal::main]
 async fn main(spawner: Spawner) {
