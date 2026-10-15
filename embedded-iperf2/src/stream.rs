@@ -44,6 +44,10 @@ pub(crate) struct TcpSender {
     /// The burst whose header was last built, and its write time. A header cut by a short write is built again
     /// with the same time.
     burst_write: Option<(u64, Timestamp)>,
+    /// How many bytes at the start of the buffer hold a header rather than fill, or `None` before the first chunk
+    /// has filled the buffer. The sender fills the buffer once and rewrites only these bytes, so nothing else may
+    /// write the buffer while the sender sends.
+    header_bytes: Option<usize>,
 }
 
 impl TcpSender {
@@ -55,6 +59,7 @@ impl TcpSender {
             sent: 0,
             start_us: None,
             burst_write: None,
+            header_bytes: None,
         }
     }
 
@@ -88,9 +93,11 @@ impl TcpSender {
             let into_burst = self.sent.checked_rem(u64::from(size)).unwrap_or_default();
             length = length.min(u64::from(size).saturating_sub(into_burst));
         }
+        let stale = self.header_bytes.unwrap_or(buffer.len());
+        fill(buffer.get_mut(..stale).unwrap_or_default());
         let length = length as usize;
         let chunk = buffer.get_mut(..length).unwrap_or_default();
-        self.build(chunk, now_us, start);
+        self.header_bytes = Some(self.build(chunk, now_us, start));
         Next::Send(length)
     }
 
@@ -121,23 +128,22 @@ impl TcpSender {
         Some(start.saturating_add(u64::try_from(due).unwrap_or(u64::MAX)))
     }
 
-    fn build(&mut self, chunk: &mut [u8], now_us: u64, start: u64) {
-        fill(chunk, self.sent);
+    /// Writes the part of a header that the next chunk starts with over the fill in `chunk`. Returns how many
+    /// bytes it wrote.
+    fn build(&mut self, chunk: &mut [u8], now_us: u64, start: u64) -> usize {
         match &self.content {
             Content::Header(header) => {
-                if let Some(from) = header.get(self.sent.min(TEST_HEADER_LEN as u64) as usize..) {
-                    let count = from.len().min(chunk.len());
-                    if let (Some(to), Some(from)) = (chunk.get_mut(..count), from.get(..count)) {
-                        to.copy_from_slice(from);
-                    }
-                }
+                let from = header
+                    .get(self.sent.min(TEST_HEADER_LEN as u64) as usize..)
+                    .unwrap_or_default();
+                write_start(chunk, from)
             }
             Content::Bursts(size) => {
                 let size = u64::from(*size);
                 let index = self.sent.checked_div(size).unwrap_or_default();
                 let into_burst = self.sent.checked_rem(size).unwrap_or_default() as usize;
                 if into_burst >= BURST_HEADER_LEN {
-                    return;
+                    return 0;
                 }
                 let write = match self.burst_write {
                     Some((built, write)) if built == index => write,
@@ -164,16 +170,22 @@ impl TcpSender {
                         .saturating_add(1),
                 };
                 let mut bytes = [0; BURST_HEADER_LEN];
-                if header.encode(&mut bytes).is_ok() {
-                    let from = bytes.get(into_burst..).unwrap_or_default();
-                    let count = from.len().min(chunk.len());
-                    if let (Some(to), Some(from)) = (chunk.get_mut(..count), from.get(..count)) {
-                        to.copy_from_slice(from);
-                    }
+                if header.encode(&mut bytes).is_err() {
+                    return 0;
                 }
+                write_start(chunk, bytes.get(into_burst..).unwrap_or_default())
             }
         }
     }
+}
+
+/// Copies as much of `from` as fits to the start of `chunk`. Returns how many bytes it copied.
+fn write_start(chunk: &mut [u8], from: &[u8]) -> usize {
+    let count = from.len().min(chunk.len());
+    if let (Some(to), Some(from)) = (chunk.get_mut(..count), from.get(..count)) {
+        to.copy_from_slice(from);
+    }
+    count
 }
 
 /// Reads the bursts of a reverse TCP test (P-5), and counts the bytes.
@@ -239,5 +251,84 @@ impl BurstReader {
             }
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::arithmetic_side_effects)]
+mod tests {
+    use super::*;
+
+    /// Asserts that `buffer` holds fill from `from` to its end.
+    fn assert_fill(buffer: &[u8], from: usize) {
+        for (at, byte) in buffer.iter().enumerate().skip(from) {
+            assert_eq!(*byte, b'0' + (at % 10) as u8, "byte {at}");
+        }
+    }
+
+    fn send(sender: &mut TcpSender, buffer: &mut [u8]) -> usize {
+        match sender.poll(0, buffer) {
+            Next::Send(length) => length,
+            next => panic!("{next:?}"),
+        }
+    }
+
+    #[test]
+    fn a_sender_keeps_its_fill_between_chunks() {
+        let mut sender = TcpSender::new(
+            Content::Header([0xAA; TEST_HEADER_LEN]),
+            Stop::Bytes(1000),
+            0,
+        );
+        let mut buffer = [0; 100];
+        let length = send(&mut sender, &mut buffer);
+        sender.sent(length);
+        buffer[99] = b'X';
+        assert_eq!(send(&mut sender, &mut buffer), 100);
+        assert_eq!(buffer[99], b'X');
+    }
+
+    #[test]
+    fn the_test_header_leaves_the_chunks_after_it() {
+        let mut sender = TcpSender::new(
+            Content::Header([0xAA; TEST_HEADER_LEN]),
+            Stop::Bytes(1000),
+            0,
+        );
+        let mut buffer = [0; 100];
+        assert_eq!(send(&mut sender, &mut buffer), 100);
+        assert_eq!(buffer[..TEST_HEADER_LEN], [0xAA; TEST_HEADER_LEN]);
+        assert_fill(&buffer, TEST_HEADER_LEN);
+        sender.sent(100);
+        assert_eq!(send(&mut sender, &mut buffer), 100);
+        assert_fill(&buffer, 0);
+    }
+
+    #[test]
+    fn a_cut_test_header_continues_in_the_next_chunk_then_leaves() {
+        let mut sender = TcpSender::new(
+            Content::Header([0xAA; TEST_HEADER_LEN]),
+            Stop::Bytes(1000),
+            0,
+        );
+        let mut buffer = [0; 100];
+        send(&mut sender, &mut buffer);
+        sender.sent(10);
+        assert_eq!(send(&mut sender, &mut buffer), 100);
+        assert_eq!(buffer[..TEST_HEADER_LEN - 10], [0xAA; TEST_HEADER_LEN - 10]);
+        assert_fill(&buffer, TEST_HEADER_LEN - 10);
+        sender.sent(100);
+        send(&mut sender, &mut buffer);
+        assert_fill(&buffer, 0);
+    }
+
+    #[test]
+    fn a_burst_header_leaves_the_chunks_after_it() {
+        let mut sender = TcpSender::new(Content::Bursts(300), Stop::Bytes(600), 0);
+        let mut buffer = [0; 200];
+        assert_eq!(send(&mut sender, &mut buffer), 200);
+        sender.sent(200);
+        assert_eq!(send(&mut sender, &mut buffer), 100);
+        assert_fill(&buffer[..100], 0);
     }
 }

@@ -151,27 +151,19 @@ pub(crate) fn timestamp(now_us: u64) -> Timestamp {
     }
 }
 
-/// Writes the fill of a stock iperf, the digits `0` to `9` in turn, as the bytes at `offset` onwards of a stream.
-pub(crate) fn fill(out: &mut [u8], offset: u64) {
-    // A copy of whole blocks from a pattern, with one 64-bit remainder per call. On the ESP32-S31, a remainder
-    // per byte held a TCP sender to half the rate of a plain socket loop.
-    let first = (offset % 10) as usize;
-    let digits = DIGITS
-        .get(first..first.saturating_add(FILL_BLOCK))
-        .unwrap_or_default();
-    for block in out.chunks_mut(FILL_BLOCK) {
-        if let Some(from) = digits.get(..block.len()) {
+/// Writes the fill of a stock iperf: the byte at index `i` of `out` is the digit `i % 10`.
+pub(crate) fn fill(out: &mut [u8]) {
+    // A copy of whole blocks. On the ESP32-S31, a remainder per byte held a TCP sender to half the rate of a
+    // plain socket loop.
+    for block in out.chunks_mut(DIGITS.len()) {
+        if let Some(from) = DIGITS.get(..block.len()) {
             block.copy_from_slice(from);
         }
     }
 }
 
-/// The length of the blocks the fill copies. A multiple of 10, so each block starts at the same digit.
-const FILL_BLOCK: usize = 60;
-
-/// The digits `0` to `9` in turn, long enough for a block from any first digit.
-const DIGITS: &[u8; FILL_BLOCK + 10] =
-    b"0123456789012345678901234567890123456789012345678901234567890123456789";
+/// The digits `0` to `9` in turn, a whole number of times, so each block of the fill starts at `0`.
+const DIGITS: &[u8; 60] = b"012345678901234567890123456789012345678901234567890123456789";
 
 #[cfg(test)]
 mod tests {
@@ -239,25 +231,11 @@ mod tests {
     }
 
     #[test]
-    fn the_fill_continues_from_its_offset() {
-        let mut out = [0; 12];
-        fill(&mut out, 7);
-        assert_eq!(&out, b"789012345678");
-    }
-
-    #[test]
     fn the_fill_continues_across_its_blocks() {
         let mut out = [0; 131];
-        fill(&mut out, 7);
+        fill(&mut out);
         for (at, byte) in out.iter().enumerate() {
-            assert_eq!(*byte, b'0' + ((at + 7) % 10) as u8, "byte {at}");
+            assert_eq!(*byte, b'0' + (at % 10) as u8, "byte {at}");
         }
-    }
-
-    #[test]
-    fn the_fill_takes_its_first_digit_from_the_whole_offset() {
-        let mut out = [0; 3];
-        fill(&mut out, (1 << 32) + 3);
-        assert_eq!(&out, b"901");
     }
 }

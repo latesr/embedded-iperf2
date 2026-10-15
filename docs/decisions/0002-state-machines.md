@@ -9,6 +9,7 @@ Covers: `Client` and `Server` in `embedded-iperf2`, and the modules under them: 
 - The core doesn't do I/O and doesn't keep time. The caller gives it the time in microseconds, writes what `poll` asks for, and passes in what the peer sent, so the same core runs on a board and on a host (D-5).
 - One `Client` and one `Server` serve TCP and UDP, forward and reverse. A driver handles two types, and never has to know the role of a test before it reads the header.
 - The caller supplies the buffer that each chunk or datagram is built in. The core doesn't allocate (D-1).
+- A TCP sender fills its buffer once and then rewrites only the header bytes at its start, as the stock iperf does. A chunk then costs the sender almost nothing beyond the socket's copy, so a board measures its network rather than the sender.
 - A UDP server only sees the datagrams of its first client, and the driver enforces that. The core never holds an address, so it doesn't depend on the address type of any network stack (D-6).
 - Jitter is kept in integer nanoseconds. A board without an FPU would pay for a floating point update on every datagram (P-17, P-18).
 - Bytes count toward the interval they arrived in, not the interval of the next `poll`. A driver that reads before it polls then reports each interval as the stock iperf does (P-19).
@@ -50,6 +51,7 @@ Interval reports follow the bytes. `received` closes an interval that is due bef
 - **An async core over embedded-io-async.** Rejected, because UDP datagrams don't fit `Read` and `Write`, and a host tool would need an executor.
 - **A peer address in each `received`.** Rejected, because it brings an address type into the core for a rule the driver enforces anyway.
 - **`f64` jitter.** Rejected, because a board without an FPU pays for it on every datagram.
+- **A fill that runs on unbroken across the stream, written into each chunk.** Rejected, because no reader checks the fill, and writing it cost the sender a pass over every chunk. On the ESP32-S31 that held TCP upload to 29.5 Mbit/s, where a plain socket loop sends 57. It was the first version.
 - **Intervals closed only in `poll`.** Rejected, because a driver that reads before it polls counted bytes in the interval before the one they arrived in. It was the first version.
 - **A close in the middle of a test as a protocol error.** Rejected, because a client in byte mode closes as soon as it has its bytes. A normal test then ended in an error. It was the first version.
 

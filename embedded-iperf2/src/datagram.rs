@@ -109,7 +109,7 @@ impl UdpSender {
         let Some(datagram) = buffer.get_mut(..length) else {
             return;
         };
-        fill(datagram, 0);
+        fill(datagram);
         let prefix = Prefix {
             packet_id: id,
             sent: timestamp(now_us),
