@@ -133,7 +133,6 @@ mod tests {
         assert!(board("result: 1.00 s\nok\n", "result").is_err());
     }
 
-    // The names avoid `stock_`, which `.cargo/mutants.toml` skips as the tests that run a stock binary.
     #[test]
     fn a_csv_report_is_the_last_line_of_9_or_14_fields() {
         let tcp =
