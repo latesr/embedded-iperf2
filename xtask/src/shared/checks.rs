@@ -1,6 +1,7 @@
 // A copy from embedded-devkit/xtask/src/shared. Edit it there, then run `cargo xtask sync` in the devkit.
 
-//! Runs and times the steps of `cargo xtask check`, and decides which groups of steps a commit's changes reach.
+//! Runs and times the steps of `cargo xtask check`, and decides which groups of steps and which crates of the
+//! root workspace a commit's changes reach.
 //!
 //! Each repo's `check.rs` names its groups and the paths each one builds from. This module names the paths that
 //! reach every group: a file in the repo root that is not markdown, and anything under `.cargo/` or `xtask/`. A
@@ -147,6 +148,76 @@ fn is_markdown(path: &Path) -> bool {
     path.extension().is_some_and(|extension| extension == "md")
 }
 
+/// The feature sets that clippy, the tests and the builds each run over, each with a name for its step. By
+/// default they are every feature on, then every feature off. With `full` they are the feature powerset to depth
+/// 2: no feature, each feature alone and each pair.
+pub fn feature_runs(full: bool) -> Vec<(&'static str, Vec<&'static str>)> {
+    if full {
+        vec![("feature pairs", vec!["--feature-powerset", "--depth", "2"])]
+    } else {
+        vec![
+            ("every feature", vec!["--all-features"]),
+            ("no feature", vec!["--no-default-features"]),
+        ]
+    }
+}
+
+/// The root workspace's crates that a change reaches, by package name: each crate whose folder holds a changed
+/// path, and each crate that depends on one of them, through any kind of dependency and with every feature on.
+/// `None` means every crate, because the tree has no changes or a change reaches every group.
+pub fn reached_packages(root: &Path, changed: &[PathBuf]) -> Result<Option<Vec<String>>, String> {
+    if changed.is_empty() || changed.iter().any(|path| reaches_every_group(path)) {
+        return Ok(None);
+    }
+    let workspace = read_toml(&root.join("Cargo.toml"))?;
+    let mut members = Vec::new();
+    for folder in workspace
+        .get("workspace")
+        .and_then(|workspace| workspace.get("members"))
+        .and_then(toml::Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(toml::Value::as_str)
+    {
+        let path = root.join(folder).join("Cargo.toml");
+        let name = read_toml(&path)?
+            .get("package")
+            .and_then(|package| package.get("name"))
+            .and_then(toml::Value::as_str)
+            .map(str::to_owned)
+            .ok_or_else(|| format!("{}: no package.name", path.display()))?;
+        members.push((name, folder));
+    }
+    let mut reached = Vec::new();
+    for (name, folder) in &members {
+        if !changed.iter().any(|path| path.starts_with(folder)) {
+            continue;
+        }
+        let output = Command::new("cargo")
+            .current_dir(root)
+            .args(["tree", "--workspace", "--invert", name])
+            .args(["--edges", "normal,build,dev", "--all-features"])
+            .args(["--prefix", "none", "--format", "{p}"])
+            .output()
+            .map_err(|error| format!("cargo tree: {error}"))?;
+        if !output.status.success() {
+            return Err(format!(
+                "cargo tree --invert {name}: {}",
+                String::from_utf8_lossy(&output.stderr)
+            ));
+        }
+        let tree = String::from_utf8_lossy(&output.stdout);
+        reached.extend(
+            tree.lines()
+                .filter_map(|line| line.split_whitespace().next())
+                .map(str::to_owned),
+        );
+    }
+    reached.sort();
+    reached.dedup();
+    Ok(Some(reached))
+}
+
 fn read_toml(path: &Path) -> Result<toml::Table, String> {
     let text =
         std::fs::read_to_string(path).map_err(|error| format!("{}: {error}", path.display()))?;
@@ -161,6 +232,70 @@ mod tests {
 
     fn paths(names: &[&str]) -> Vec<PathBuf> {
         names.iter().map(PathBuf::from).collect()
+    }
+
+    #[test]
+    fn features_are_all_on_then_all_off_and_the_full_check_takes_each_pair() {
+        assert_eq!(
+            feature_runs(false),
+            [
+                ("every feature", vec!["--all-features"]),
+                ("no feature", vec!["--no-default-features"]),
+            ]
+        );
+        assert_eq!(
+            feature_runs(true),
+            [("feature pairs", vec!["--feature-powerset", "--depth", "2"])]
+        );
+    }
+
+    #[test]
+    fn a_change_reaches_the_crates_it_is_in_and_every_crate_that_depends_on_them() {
+        let repo = TempRepo::new("checks-reached");
+        let crates = [
+            ("leaf", ""),
+            (
+                "tested",
+                "[dev-dependencies]\ncrate-leaf = { path = \"../leaf\" }\n",
+            ),
+            (
+                "top",
+                "[dependencies]\ncrate-tested = { path = \"../tested\" }\n",
+            ),
+            (
+                "optional",
+                "[dependencies]\ncrate-leaf = { path = \"../leaf\", optional = true }\n",
+            ),
+            ("other", ""),
+        ];
+        repo.write(
+            "Cargo.toml",
+            "[workspace]\nmembers = [\"leaf\", \"tested\", \"top\", \"optional\", \"other\"]\nresolver = \"3\"\n",
+        );
+        for (name, dependencies) in crates {
+            std::fs::create_dir_all(repo.0.join(name).join("src")).unwrap();
+            repo.write(
+                &format!("{name}/Cargo.toml"),
+                &format!(
+                    "[package]\nname = \"crate-{name}\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n{dependencies}"
+                ),
+            );
+            repo.write(&format!("{name}/src/lib.rs"), "");
+        }
+        let reached = |changed: &[&str]| reached_packages(&repo.0, &paths(changed));
+        let names =
+            |names: &[&str]| Ok(Some(names.iter().map(|name| (*name).to_owned()).collect()));
+        assert_eq!(
+            reached(&["leaf/src/lib.rs"]),
+            names(&["crate-leaf", "crate-optional", "crate-tested", "crate-top"])
+        );
+        assert_eq!(
+            reached(&["other/Cargo.toml", "docs/a.md"]),
+            names(&["crate-other"])
+        );
+        assert_eq!(reached(&["docs/a.md"]), names(&[]));
+        assert_eq!(reached(&[]), Ok(None));
+        assert_eq!(reached(&["Cargo.lock", "other/src/lib.rs"]), Ok(None));
     }
 
     #[test]
