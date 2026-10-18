@@ -178,7 +178,7 @@ Every field is big-endian. Each offset counts from the start of the message. [Th
 
 **P-4** A UDP client that receives no server report ends the test without one, and its result says so.
 
-**P-5** A client in a reverse TCP test sends the test header and then reads bursts of W-10 until the server closes. In byte mode it also ends the test when the byte count has arrived, or 10 s after the last bytes. It refuses a burst header whose `burst_size` is below 120.
+**P-5** A client in a reverse TCP test sends the test header and then reads bursts of W-10 until the server closes. In time mode it also ends the test at the duration plus 2 s after the header is out. In byte mode it also ends the test when the byte count has arrived, or 10 s after the last bytes. It refuses a burst header whose `burst_size` is below 120.
 
 **P-6** A client in a reverse UDP test sends the header datagram with packet ID 1, and sends it again each second until data arrives. It ends the test with an error when no data arrives within 10 s.
 
