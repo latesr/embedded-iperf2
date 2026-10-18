@@ -1,0 +1,17 @@
+[build]
+target = "riscv32imafc-unknown-none-elf"
+
+[target.riscv32imafc-unknown-none-elf]
+runner = "mcu-run run --chip esp32s31"
+rustflags = [
+    "-C", "link-arg=-Tdefmt.x",
+    "-C", "link-arg=-Tlinkall.x",
+    "-C", "force-frame-pointers",
+]
+
+[env]
+DEFMT_LOG = "info"
+# Code and read-only data run from PSRAM at 200 MHz, as the devkit's board crate sets. From flash, the 16 KiB
+# instruction cache holds the S31 well below line rate.
+ESP_HAL_CONFIG_CODE_IN_PSRAM = "true"
+ESP_HAL_CONFIG_PSRAM_FREQUENCY = "200MHz"

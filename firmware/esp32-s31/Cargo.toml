@@ -1,0 +1,58 @@
+# The embedded-iperf2 firmware for the ESP32-S31-Function-CoreBoard-1, on the devkit's board crate. Its console has
+# `mcu-net`'s `net` commands, whose `net iperf` runs our client, and `iperf -s`, which runs our server.
+# `cargo xtask hil` builds, flashes and drives it against iperf 2.2.2 and our `std` driver on the host (T-7). It
+# builds only beside clones of embedded-devkit and esp-hal, as the devkit's esp workspace does, and `cargo xtask
+# check` does not build it.
+[workspace]
+resolver = "3"
+
+[package]
+name = "embedded-iperf2-esp32-s31"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[dependencies]
+board = { package = "embedded-devkit-esp32-s31-function-coreboard-1", path = "../../../embedded-devkit/esp/embedded-devkit-esp32-s31-function-coreboard-1", features = ["ethernet"] }
+defmt = "1.1"
+embassy-executor = "0.10"
+embassy-futures = "0.1"
+embassy-net = { version = "0.9.1", features = ["proto-ipv4", "medium-ethernet", "tcp", "udp", "dns", "icmp", "dhcpv4"] }
+embassy-time = "0.5"
+embedded-iperf2 = { path = "../../embedded-iperf2", features = ["embassy-net"] }
+esp-hal = { git = "https://github.com/esp-rs/esp-hal", rev = "44c7e7eb98bc4f09a8f6991c15c33383679a6888", features = ["esp32s31", "unstable", "defmt"] }
+esp-rtos = { git = "https://github.com/esp-rs/esp-hal", rev = "44c7e7eb98bc4f09a8f6991c15c33383679a6888", features = ["esp32s31", "embassy", "defmt"] }
+mcu-console = { path = "../../../embedded-devkit/mcu-console" }
+mcu-net = { path = "../../../embedded-devkit/mcu-net" }
+static_cell = "2"
+
+[profile.release]
+debug = true
+
+# With code in PSRAM, the start-up must inline into RAM, as the devkit's esp workspace sets.
+[profile.dev.package.esp-hal]
+opt-level = 3
+
+# The devkit's esp-hal clone, as the devkit's esp workspace patches it. Every crate from the esp-hal repository
+# comes from the one clone, because two copies of esp-rom-sys cannot link.
+[patch."https://github.com/esp-rs/esp-hal"]
+esp-alloc = { path = "../../../esp-hal/esp-alloc" }
+esp-bootloader-esp-idf = { path = "../../../esp-hal/esp-bootloader-esp-idf" }
+esp-config = { path = "../../../esp-hal/esp-config" }
+esp-hal = { path = "../../../esp-hal/esp-hal" }
+esp-hal-procmacros = { path = "../../../esp-hal/esp-hal-procmacros" }
+esp-metadata-generated = { path = "../../../esp-hal/esp-metadata-generated" }
+esp-phy = { path = "../../../esp-hal/esp-phy" }
+esp-radio = { path = "../../../esp-hal/esp-radio" }
+esp-radio-rtos-driver = { path = "../../../esp-hal/esp-radio-rtos-driver" }
+esp-riscv-rt = { path = "../../../esp-hal/esp-riscv-rt" }
+esp-rom-sys = { path = "../../../esp-hal/esp-rom-sys" }
+esp-rtos = { path = "../../../esp-hal/esp-rtos" }
+esp-sync = { path = "../../../esp-hal/esp-sync" }
+
+# mcu-net asks for embedded-iperf2 from crates.io, which does not have it yet. The patch also makes `net iperf` run
+# the code under test.
+[patch.crates-io]
+embedded-iperf2 = { path = "../../embedded-iperf2" }

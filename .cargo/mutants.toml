@@ -8,6 +8,7 @@ exclude_globs = [
     "xtask/src/record/mod.rs",
     "xtask/src/iperf.rs",
     "xtask/src/fuzz.rs",
+    "xtask/src/hil/mod.rs",
 ]
 
 # Every `|` in the crate joins bits that do not overlap: flag constants, a header length shifted under `LEN_BIT`,

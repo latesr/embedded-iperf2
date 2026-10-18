@@ -299,7 +299,7 @@ Development is test first. `CONVENTIONS.md` states how a developer writes and ch
 
 ### Hardware tests
 
-**T-7** Firmware under `firmware/<board>/`, built on the embedded-devkit board crate of each reference board, runs a client and a server against the `std` driver on the host, in each mode of T-5. `cargo xtask hil` runs them by hand, never in CI.
+**T-7** Firmware under `firmware/<board>/`, built on the embedded-devkit board crate of each reference board, runs a client and a server in each mode of T-5. The other end is a stock iperf 2.2.2 or the `std` driver on the host. In each run, the receiver loses no datagram, both ends count the same bytes, and a test in time mode lasts its length at the receiver. `cargo xtask hil` runs them by hand, never in CI.
 
 ### Continuous integration
 
