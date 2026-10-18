@@ -101,8 +101,8 @@ impl TcpServer {
 /// A UDP server that runs one test at a time on a socket.
 ///
 /// A test belongs to the address and port of the datagram that started it, and the server ignores other
-/// datagrams until the test ends. Before then it takes datagrams from any address, so a late repeat of an old
-/// test's end does not take the server. Another address's datagram during the wait after the report ends the
+/// datagrams until the test ends. Until a test starts, it takes datagrams from any address, so a late repeat of an
+/// old test's end does not take the server. Another address's datagram during the wait after the report ends the
 /// test and stays in the socket as the next test's first. After a refused test, the server drops the later
 /// datagrams of that address and port, until another address and port is refused (D-6).
 #[derive(Debug)]
@@ -311,7 +311,8 @@ struct UdpLink<'s> {
     /// The address and port of the last refused flow, whose datagrams a server drops.
     refused: Option<SocketAddr>,
     /// Whether another flow's datagram ended the test. It stays in the socket for the next test, so the link
-    /// reads nothing more.
+    /// reads nothing more. The next test times it from when it reads it, not from its arrival, as a stock server
+    /// does.
     kept: bool,
 }
 

@@ -167,8 +167,8 @@ impl<'s> TcpServer<'s> {
 /// A UDP server that runs one test at a time on one bound socket.
 ///
 /// A test belongs to the address and port of the datagram that started it, and the server ignores other
-/// datagrams until the test ends. Before then it takes datagrams from any address, so a late repeat of an old
-/// test's end does not take the server. Another address's datagram during the wait after the report ends the
+/// datagrams until the test ends. Until a test starts, it takes datagrams from any address, so a late repeat of an
+/// old test's end does not take the server. Another address's datagram during the wait after the report ends the
 /// test, and the server keeps it in its stash as the next test's first. After a refused test, the server drops
 /// the later datagrams of that address and port, until another address and port is refused (D-6).
 pub struct UdpServer<'s> {
@@ -217,10 +217,8 @@ impl<'s> UdpServer<'s> {
         let mut peer = None;
         let start = match self.kept.take() {
             Some(kept) => {
-                server.received(0, self.stash.get(..kept.len).unwrap_or_default());
-                if !server.waits_for_first() {
-                    peer = Some(kept.from);
-                }
+                let bytes = self.stash.get(..kept.len).unwrap_or_default();
+                deliver_datagram(server, &mut peer, 0, bytes, kept.from);
                 kept.at
             }
             None => Instant::now(),
@@ -420,10 +418,7 @@ impl Link for UdpLink<'_, '_> {
                     }
                     return;
                 }
-                machine.received(clock.now_us(), bytes);
-                if peer.is_none() && !machine.waits_for_first() {
-                    *peer = Some(from);
-                }
+                deliver_datagram(machine, peer, clock.now_us(), bytes, from);
             })
             .await;
         false
@@ -440,4 +435,19 @@ impl Link for UdpLink<'_, '_> {
     }
 
     fn close_write(&mut self) {}
+}
+
+/// Passes a datagram of the test to `machine`, and makes its sender the peer once the machine has stopped waiting
+/// for its first datagram.
+fn deliver_datagram(
+    machine: &mut impl Machine,
+    peer: &mut Option<IpEndpoint>,
+    now_us: u64,
+    bytes: &[u8],
+    from: IpEndpoint,
+) {
+    machine.received(now_us, bytes);
+    if peer.is_none() && !machine.waits_for_first() {
+        *peer = Some(from);
+    }
 }
