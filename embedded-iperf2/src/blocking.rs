@@ -145,12 +145,7 @@ fn accept_within(listener: &TcpListener, timeout: Duration) -> io::Result<TcpStr
     let start = Instant::now();
     loop {
         match listener.accept() {
-            Ok((stream, _)) => {
-                // A stream accepted from a non-blocking listener is non-blocking on BSD and macOS, and the link's
-                // reads with a wait need it to block.
-                stream.set_nonblocking(false)?;
-                return Ok(stream);
-            }
+            Ok((stream, _)) => return Ok(stream),
             Err(error) if error.kind() == ErrorKind::WouldBlock => {}
             Err(error) => return Err(error),
         }
@@ -262,8 +257,8 @@ trait Link {
     fn close_write(&mut self) -> io::Result<()>;
 }
 
-/// Moves the bytes of `machine` over `link` until the test ends. A machine that still waits for its first datagram
-/// `start_timeout` after the call fails with `TimedOut`.
+/// Moves the bytes of `machine` over `link` until the test ends. Fails with `TimedOut` when the machine still waits
+/// for its first datagram `start_timeout` after the call.
 fn run(
     machine: &mut impl Machine,
     link: &mut impl Link,
@@ -341,6 +336,9 @@ impl<'l> TcpLink<'l> {
         // A blocked write must not hold the loop past a deadline or an interval.
         stream.set_write_timeout(Some(LONGEST_WAIT))?;
         stream.set_nodelay(true)?;
+        // A stream accepted from a non-blocking listener is non-blocking on BSD and macOS, and the reads with a
+        // wait need it to block.
+        stream.set_nonblocking(false)?;
         Ok(Self { stream, listener })
     }
 

@@ -379,11 +379,10 @@ fn a_server_refuses_settings_that_do_not_match_its_socket() {
 /// Each `run_one` of a server with a start timeout: its test, or the kind of its error, and how long it took.
 type Timed = Vec<(Result<End, ErrorKind>, Duration)>;
 
-/// Runs `count` tests in a row on a server of `transport` whose start timeout is `timeout`.
+/// Runs a test in a row on a server of `transport` for each of `timeouts`, with that start timeout.
 fn serve_with_start_timeout(
     transport: Transport,
-    timeout: Duration,
-    count: usize,
+    timeouts: Vec<Duration>,
 ) -> (SocketAddr, loopback::Pending<Timed>) {
     enum Driver {
         Tcp(TcpServer),
@@ -406,13 +405,14 @@ fn serve_with_start_timeout(
         }
     };
     let ends = spawn(move || {
-        match &mut driver {
-            Driver::Tcp(driver) => driver.set_start_timeout(Some(timeout)).unwrap(),
-            Driver::Udp(driver) => driver.set_start_timeout(Some(timeout)).unwrap(),
-        }
         let mut buffer = vec![0; 4096];
-        (0..count)
-            .map(|_| {
+        timeouts
+            .into_iter()
+            .map(|timeout| {
+                match &mut driver {
+                    Driver::Tcp(driver) => driver.set_start_timeout(Some(timeout)).unwrap(),
+                    Driver::Udp(driver) => driver.set_start_timeout(Some(timeout)).unwrap(),
+                }
                 let mut server = Server::new(server_config(transport), &mut buffer).unwrap();
                 let mut reports = Vec::new();
                 let on_report = |report: &Report| reports.push(*report);
@@ -435,7 +435,7 @@ fn serve_with_start_timeout(
 #[test]
 fn a_server_without_a_client_gives_up_at_its_start_timeout() {
     for transport in [Transport::Tcp, Transport::Udp] {
-        let (_, ends) = serve_with_start_timeout(transport, Duration::from_millis(200), 1);
+        let (_, ends) = serve_with_start_timeout(transport, vec![Duration::from_millis(200)]);
         let (end, took) = ends.get().pop().unwrap();
         assert_eq!(end.err(), Some(ErrorKind::TimedOut), "{transport:?}");
         assert!(
@@ -449,7 +449,7 @@ fn a_server_without_a_client_gives_up_at_its_start_timeout() {
 #[test]
 fn a_test_that_starts_within_the_start_timeout_runs() {
     for transport in [Transport::Tcp, Transport::Udp] {
-        let (address, ends) = serve_with_start_timeout(transport, Duration::from_secs(2), 1);
+        let (address, ends) = serve_with_start_timeout(transport, vec![Duration::from_secs(2)]);
         let client = run(config(transport, false, Length::Bytes(51_200)), address);
         let (end, _) = ends.get().pop().unwrap();
         let served = end.unwrap();
@@ -465,8 +465,11 @@ fn a_test_that_starts_within_the_start_timeout_runs() {
 #[test]
 fn a_server_runs_the_next_test_after_a_start_timeout() {
     for transport in [Transport::Tcp, Transport::Udp] {
-        let (address, ends) = serve_with_start_timeout(transport, Duration::from_millis(400), 2);
-        thread::sleep(Duration::from_millis(600));
+        // The client comes 700 ms after the first timeout, so a server thread that starts late on a loaded host
+        // does not take it in the first test.
+        let timeouts = vec![Duration::from_millis(300), Duration::from_secs(5)];
+        let (address, ends) = serve_with_start_timeout(transport, timeouts);
+        thread::sleep(Duration::from_secs(1));
         let client = run(config(transport, false, Length::Bytes(51_200)), address);
         let ends = ends.get();
         assert_eq!(
@@ -486,16 +489,18 @@ fn a_server_runs_the_next_test_after_a_start_timeout() {
 
 #[test]
 fn old_ends_do_not_hold_off_a_udp_start_timeout() {
-    let (address, ends) = serve_with_start_timeout(Transport::Udp, Duration::from_millis(300), 1);
+    let timeout = Duration::from_millis(300);
+    let (address, ends) = serve_with_start_timeout(Transport::Udp, vec![timeout]);
     let stray = UdpSocket::bind("127.0.0.1:0").unwrap();
     let started = Instant::now();
-    while started.elapsed() < Duration::from_millis(600) {
+    // A deadline that each datagram moved would end 300 ms after the last one, at about 1.3 s.
+    while started.elapsed() < Duration::from_secs(1) {
         stray.send_to(&old_end(), address).unwrap();
         thread::sleep(Duration::from_millis(20));
     }
     let (end, took) = ends.get().pop().unwrap();
     assert_eq!(end.err(), Some(ErrorKind::TimedOut));
-    assert!(took < Duration::from_millis(500), "{took:?}");
+    assert!(took < Duration::from_secs(1), "{took:?}");
 }
 
 #[test]
