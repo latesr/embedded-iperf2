@@ -18,8 +18,12 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Run every check that CI runs.
-    Check,
+    /// Run the checks with every feature on and then off.
+    Check {
+        /// Run every check, over each feature alone and each pair, as CI does.
+        #[arg(long)]
+        full: bool,
+    },
     /// Record the samples from the iperf 2.2.2 binary that `MCU_IPERF2` names.
     Record {
         /// Record only these cases. Every case is recorded when none is named.
@@ -41,7 +45,7 @@ fn main() {
     let cli = Cli::parse();
     let root = repo_root();
     let result = match cli.command {
-        Command::Check => check::run(&root),
+        Command::Check { full } => check::run(&root, full),
         Command::Record { only } => record::run(&root, &only),
         Command::InstallIperf => iperf::install(),
         Command::Fuzz { seconds } => fuzz::run(&root, seconds),

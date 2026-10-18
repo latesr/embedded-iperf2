@@ -1,8 +1,8 @@
-//! Runs every check that CI runs. The link and prose checks go first, because they take under a second and a
+//! Runs the checks. The link and prose checks go first, because they take under a second and a
 //! writing fault should fail before the builds.
 
 use crate::shared;
-use crate::shared::checks::{changed_paths, only_markdown, step};
+use crate::shared::checks::{changed_paths, feature_runs, only_markdown, reached_packages, step};
 use std::path::Path;
 use std::process::Command;
 
@@ -12,10 +12,16 @@ const PUBLISHED: &[&str] = &["embedded-iperf2"];
 /// The features that only a board turns on, so only a cross build compiles them for a board's target.
 const BOARD_FEATURES: &[&str] = &["embassy-net"];
 
-/// Runs each check in turn and stops at the first failure.
-pub fn run(root: &Path) -> Result<(), String> {
+/// Runs each check in turn and stops at the first failure. With `full`, the lints and tests cover every crate,
+/// whatever changed.
+pub fn run(root: &Path, full: bool) -> Result<(), String> {
     let targets = toolchain_targets(root)?;
     let msrv = workspace_msrv(root)?;
+    let changed = if full {
+        Vec::new()
+    } else {
+        changed_paths(root)
+    };
 
     println!("==> links");
     shared::links::run(root)?;
@@ -24,56 +30,61 @@ pub fn run(root: &Path) -> Result<(), String> {
     println!("==> toolchain");
     shared::toolchain::check(root)?;
     // The root workspace is the one group. No code reads a markdown file at run time, so it names no markdown path.
-    if only_markdown(&changed_paths(root), &[]) {
+    if only_markdown(&changed, &[]) {
         println!("==> every cargo check skipped, because the change is only markdown");
         return Ok(());
     }
     shared::require_tool(root, "hack", "cargo install cargo-hack")?;
     step("format", cargo(root).args(["fmt", "--all", "--check"]))?;
-    step(
-        "lints",
-        cargo(root).args([
-            "hack",
-            "clippy",
-            "--workspace",
-            "--all-targets",
-            "--feature-powerset",
-            "--depth",
-            "2",
-            "--",
-            "-D",
-            "warnings",
-        ]),
-    )?;
-    step(
-        "tests",
-        cargo(root).args([
-            "hack",
-            "test",
-            "--workspace",
-            "--feature-powerset",
-            "--depth",
-            "2",
-        ]),
-    )?;
+    let crates = match reached_packages(root, &changed)? {
+        None => vec!["--workspace".to_owned()],
+        Some(names) => names
+            .into_iter()
+            .flat_map(|name| ["--package".to_owned(), name])
+            .collect(),
+    };
+    if crates.is_empty() {
+        println!(
+            "==> lints and tests skipped, because the change reaches no crate in the workspace"
+        );
+    } else {
+        for (features, args) in feature_runs(full) {
+            step(
+                &format!("lints, {features}"),
+                cargo(root)
+                    .args(["hack", "clippy", "--all-targets"])
+                    .args(&crates)
+                    .args(args)
+                    .args(["--", "-D", "warnings"]),
+            )?;
+        }
+        for (features, args) in feature_runs(full) {
+            step(
+                &format!("tests, {features}"),
+                cargo(root).args(["hack", "test"]).args(&crates).args(args),
+            )?;
+        }
+    }
     step(
         "docs",
         cargo(root)
             .args(["doc", "--workspace", "--no-deps"])
             .env("RUSTDOCFLAGS", "-D warnings"),
     )?;
-    step(
-        "feature combinations",
-        cargo(root).args([
-            "hack",
-            "check",
-            "--workspace",
-            "--feature-powerset",
-            "--depth",
-            "2",
-            "--no-dev-deps",
-        ]),
-    )?;
+    if full {
+        step(
+            "feature combinations",
+            cargo(root).args([
+                "hack",
+                "check",
+                "--workspace",
+                "--feature-powerset",
+                "--depth",
+                "2",
+                "--no-dev-deps",
+            ]),
+        )?;
+    }
     for (target, args) in cross_builds(&targets, PUBLISHED, BOARD_FEATURES) {
         step(&format!("build for {target}"), cargo(root).args(args))?;
     }

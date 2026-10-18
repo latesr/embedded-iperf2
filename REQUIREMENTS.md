@@ -299,7 +299,7 @@ Development is test first. `CONVENTIONS.md` states how a developer writes and ch
 
 ### Continuous integration
 
-- CI runs `cargo xtask check` on every push. `CONVENTIONS.md` and `AGENTS.md` list what it runs.
+- CI runs `cargo xtask check --full` on every push. `CONVENTIONS.md` and `AGENTS.md` list what it runs.
 - CI runs cargo-mutants over the changed lines on every push.
 - A full cargo-mutants run covers every crate nightly and before each release.
 - The nightly job checks every feature combination of every published crate with `cargo hack`.

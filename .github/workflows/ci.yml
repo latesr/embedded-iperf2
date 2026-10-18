@@ -1,4 +1,4 @@
-# This workflow has not run until the repo has a remote. The commit hook runs the same checks until then.
+# This workflow has not run until the repo has a remote. Until then, run `cargo xtask check --full` by hand.
 name: CI
 
 on:
@@ -34,7 +34,7 @@ jobs:
           key: iperf-2.2.2-74d4b553
       - run: cargo xtask install-iperf
       - run: echo "MCU_IPERF2=$HOME/.local/opt/iperf/2.2.2/iperf" >> "$GITHUB_ENV"
-      - run: cargo xtask check
+      - run: cargo xtask check --full
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-mutants
@@ -61,7 +61,7 @@ jobs:
         with:
           tool: cargo-fuzz,cargo-hack,cargo-mutants
       - uses: Swatinem/rust-cache@v2
-      # cargo xtask check covers each feature alone and each pair. This covers every combination.
+      # cargo xtask check --full covers each feature alone and each pair. This covers every combination.
       - name: Check every feature combination
         run: cargo hack check --workspace --feature-powerset --no-dev-deps
       - name: Fuzz the parser for ten minutes
