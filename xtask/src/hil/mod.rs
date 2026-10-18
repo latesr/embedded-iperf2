@@ -8,13 +8,13 @@
 
 mod reply;
 
-use crate::iperf;
+use crate::iperf::{self, StockServer};
 use embedded_iperf2::blocking::{TcpServer, UdpServer, run_client};
 use embedded_iperf2::{Client, Config, Length, Report, Server, ServerConfig, Transport};
 use reply::Counts;
 use std::net::{IpAddr, Ipv4Addr, TcpListener, UdpSocket};
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
+use std::process::{Command, Stdio};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
@@ -183,11 +183,7 @@ enum Host {
 /// Builds and flashes the firmware, then runs each case whose name holds `only`, or every case. Fails when a run
 /// fails, after every run.
 pub fn run(root: &Path, probe: &str, only: Option<&str>) -> Result<(), String> {
-    let stock = std::env::var("MCU_IPERF2").map_err(|_| {
-        "MCU_IPERF2 must name an iperf 2.2.2 binary, which `cargo xtask install-iperf` builds"
-            .to_owned()
-    })?;
-    iperf::check_version(Path::new(&stock))?;
+    let (stock, _) = iperf::binary()?;
     let elf = build(&root.join(FIRMWARE))?;
     flash(probe, &elf)?;
     let board = lease(probe)?;
@@ -235,11 +231,14 @@ fn run_one(
             let (port, server) = match side {
                 Host::Stock => {
                     let port = free_port(case.transport)?;
-                    let mut args = vec!["-s".to_owned(), "-p".to_owned(), port.to_string()];
+                    let mut args = ["-s", "-p", &port.to_string(), "-y", "C"]
+                        .map(str::to_owned)
+                        .to_vec();
                     if case.transport == Transport::Udp {
                         args.push("-u".to_owned());
                     }
-                    (port, Waiting::Stock(StockServer::start(stock, &args)?))
+                    let server = StockServer::start(stock, &args, STOCK_START)?;
+                    (port, Waiting::Stock(server))
                 }
                 Host::Ours => {
                     let (port, thread) = serve(case.transport)?;
@@ -335,7 +334,12 @@ enum Waiting {
 impl Waiting {
     fn counts(self) -> Result<Counts, String> {
         match self {
-            Self::Stock(server) => reply::stock(&server.interrupt()?),
+            Self::Stock(server) => {
+                let output = server.interrupt()?;
+                reply::stock(&String::from_utf8_lossy(
+                    &[output.stdout, output.stderr].concat(),
+                ))
+            }
             Self::Ours(thread) => thread
                 .join()
                 .map_err(|_| "our server's thread panicked".to_owned())?,
@@ -442,48 +446,6 @@ fn stock_client(stock: &str, board: Ipv4Addr, case: &Case) -> Result<Counts, Str
     reply::stock(&String::from_utf8_lossy(
         &[output.stdout, output.stderr].concat(),
     ))
-}
-
-/// A stock server, killed when it is dropped.
-struct StockServer(Option<Child>);
-
-impl StockServer {
-    fn start(stock: &str, args: &[String]) -> Result<Self, String> {
-        let child = Command::new(stock)
-            .args(args)
-            .args(["-y", "C"])
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .map_err(|error| format!("{stock}: {error}"))?;
-        thread::sleep(STOCK_START);
-        Ok(Self(Some(child)))
-    }
-
-    /// Stops the server with SIGINT, so it flushes its report, and returns what it printed.
-    fn interrupt(mut self) -> Result<String, String> {
-        let child = self.0.take().ok_or("the stock server is gone")?;
-        let status = Command::new("kill")
-            .args(["-INT", &child.id().to_string()])
-            .status()
-            .map_err(|error| format!("kill: {error}"))?;
-        if !status.success() {
-            return Err("kill -INT failed".to_owned());
-        }
-        let output = child
-            .wait_with_output()
-            .map_err(|error| format!("the stock server: {error}"))?;
-        Ok(String::from_utf8_lossy(&[output.stdout, output.stderr].concat()).into_owned())
-    }
-}
-
-impl Drop for StockServer {
-    fn drop(&mut self) {
-        if let Some(child) = &mut self.0 {
-            let _ = child.kill();
-            let _ = child.wait();
-        }
-    }
 }
 
 /// Builds the firmware and returns its ELF.

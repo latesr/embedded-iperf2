@@ -1,8 +1,9 @@
-//! The stock iperf that the recorder and the interoperability tests run, and `cargo xtask install-iperf`, which
-//! builds it.
+//! The stock iperf that the recorder, `cargo xtask hil` and the interoperability tests run, and `cargo xtask
+//! install-iperf`, which builds it.
 
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Child, Command, Output, Stdio};
+use std::time::Duration;
 
 /// The version the samples come from. `MCU_IPERF2` must name a binary that reports it.
 pub const VERSION: &str = "2.2.2";
@@ -76,6 +77,57 @@ pub fn check_version(binary: &Path) -> Result<String, String> {
             "{} reports `{line}`, not {VERSION}",
             binary.display()
         ))
+    }
+}
+
+/// The binary that `MCU_IPERF2` names, and the version line it prints. Fails when the variable is not set, or when
+/// the binary does not report the pinned version.
+pub fn binary() -> Result<(String, String), String> {
+    let binary = std::env::var("MCU_IPERF2").map_err(|_| {
+        format!("MCU_IPERF2 must name an iperf {VERSION} binary, which `cargo xtask install-iperf` builds")
+    })?;
+    let version = check_version(Path::new(&binary))?;
+    Ok((binary, version))
+}
+
+/// A stock server, killed when it is dropped, so a run that fails part way does not leave it running.
+pub struct StockServer(Option<Child>);
+
+impl StockServer {
+    /// Starts `binary` with `args`, and waits `start` for it to listen.
+    pub fn start(binary: &str, args: &[String], start: Duration) -> Result<Self, String> {
+        let child = Command::new(binary)
+            .args(args)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|error| format!("{binary}: {error}"))?;
+        std::thread::sleep(start);
+        Ok(Self(Some(child)))
+    }
+
+    /// Stops the server with SIGINT, so it flushes its report, and returns what it printed.
+    pub fn interrupt(mut self) -> Result<Output, String> {
+        let child = self.0.take().ok_or("the server is gone")?;
+        let status = Command::new("kill")
+            .args(["-INT", &child.id().to_string()])
+            .status()
+            .map_err(|error| format!("kill: {error}"))?;
+        if !status.success() {
+            return Err("kill -INT failed".to_owned());
+        }
+        child
+            .wait_with_output()
+            .map_err(|error| format!("the server: {error}"))
+    }
+}
+
+impl Drop for StockServer {
+    fn drop(&mut self) {
+        if let Some(child) = &mut self.0 {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
     }
 }
 

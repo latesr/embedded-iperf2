@@ -3,12 +3,12 @@
 
 pub mod sample;
 
-use crate::iperf::{self, VERSION};
+use crate::iperf::{self, StockServer, VERSION};
 use sample::Direction;
 use std::io::{ErrorKind, Read, Write};
 use std::net::{Shutdown, SocketAddr, TcpListener, TcpStream, UdpSocket};
 use std::path::Path;
-use std::process::{Child, Command, Output, Stdio};
+use std::process::{Command, Output};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -63,9 +63,7 @@ const UDP_POLL: Duration = Duration::from_millis(100);
 
 /// Records every case, or only the cases named in `only`, into the crate's `tests/samples/<version>/`.
 pub fn run(root: &Path, only: &[String]) -> Result<(), String> {
-    let binary = std::env::var("MCU_IPERF2")
-        .map_err(|_| format!("MCU_IPERF2 must name an iperf {VERSION} binary, which `cargo xtask install-iperf` builds"))?;
-    let version = iperf::check_version(Path::new(&binary))?;
+    let (binary, version) = iperf::binary()?;
     if let Some(unknown) = only
         .iter()
         .find(|name| !CASES.iter().any(|case| case.name == name.as_str()))
@@ -125,18 +123,11 @@ struct Recording {
 
 fn record(binary: &str, case: &Case) -> Result<Recording, String> {
     let server_port = free_port(case.udp)?;
-    let mut server_command = Command::new(binary);
-    server_command.args(["-s", "-p", &server_port.to_string()]);
+    let mut args = vec!["-s".to_owned(), "-p".to_owned(), server_port.to_string()];
     if case.udp {
-        server_command.arg("-u");
+        args.push("-u".to_owned());
     }
-    let server = server_command
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|error| format!("{binary}: {error}"))?;
-    let server = KillOnDrop(Some(server));
-    thread::sleep(SERVER_START);
+    let server = StockServer::start(binary, &args, SERVER_START)?;
 
     let server_address = SocketAddr::from(([127, 0, 0, 1], server_port));
     let (sample, client) = if case.udp {
@@ -352,33 +343,4 @@ fn take(sample: &Mutex<Vec<u8>>) -> Result<Vec<u8>, String> {
     Ok(std::mem::take(
         &mut *sample.lock().map_err(|_| "poisoned".to_owned())?,
     ))
-}
-
-/// The server process, killed when the recording fails part way.
-struct KillOnDrop(Option<Child>);
-
-impl KillOnDrop {
-    /// Stops the server with SIGINT, so it flushes its report, and returns what it printed.
-    fn interrupt(mut self) -> Result<Output, String> {
-        let child = self.0.take().ok_or("the server is gone")?;
-        let status = Command::new("kill")
-            .args(["-INT", &child.id().to_string()])
-            .status()
-            .map_err(|error| format!("kill: {error}"))?;
-        if !status.success() {
-            return Err("kill -INT failed".to_owned());
-        }
-        child
-            .wait_with_output()
-            .map_err(|error| format!("the server: {error}"))
-    }
-}
-
-impl Drop for KillOnDrop {
-    fn drop(&mut self) {
-        if let Some(child) = &mut self.0 {
-            let _ = child.kill();
-            let _ = child.wait();
-        }
-    }
 }
