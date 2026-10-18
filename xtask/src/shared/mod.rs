@@ -11,6 +11,7 @@ pub mod links;
 mod mutants;
 pub mod prose;
 mod renumber;
+pub mod sweep;
 pub mod toolchain;
 
 use clap::Subcommand;
