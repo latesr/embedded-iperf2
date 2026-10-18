@@ -18,6 +18,9 @@ exclude_re = [
     # The reset at the end of a burst is what lets BurstReader::received read on. Without it, every pass of the
     # loop reads 0 bytes, so the mutant can only loop for ever and no test can end it.
     'replace == with != in BurstReader::received',
+    # A client's link starts with the server as its peer, so no driver asks a client whether it waits for its
+    # first datagram, and the default's value cannot change behaviour.
+    'replace Machine::waits_for_first -> bool with true',
 ]
 
 # The tests whose names start with `stock_` run a stock iperf for about ten seconds, and would run once for each

@@ -32,6 +32,8 @@ const MACS: [[u8; 6]; 2] = [[0x02, 0, 0, 0, 0, 2], [0x02, 0, 0, 0, 0, 1]];
 const TCP_BUFFER: usize = 8192;
 const UDP_BUFFER: usize = 16_384;
 const UDP_PACKETS: usize = 32;
+/// The length of a UDP server's stash: the default datagram length.
+pub const STASH: usize = 1470;
 
 /// The frames in flight to each side, and every frame sent, with the side that sent it: 0 is the client's.
 #[derive(Default)]
@@ -331,7 +333,8 @@ pub async fn serve(net: &Net<'_>, config: ServerConfig) -> Ended {
         }
         Transport::Udp => {
             let mut buffers = UdpBuffers::new();
-            let mut driver = UdpServer::new(buffers.bound(net.server, PORT));
+            let mut stash = [0; STASH];
+            let mut driver = UdpServer::new(buffers.bound(net.server, PORT), &mut stash);
             udp_once(&mut driver, config).await
         }
     }

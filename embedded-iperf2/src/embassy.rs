@@ -88,7 +88,7 @@ pub async fn run_tcp_client(
             return Err(Error::Connect(ConnectError::TimedOut));
         }
     }
-    let outcome = run(client, &mut TcpLink { socket }, on_report).await;
+    let outcome = run(client, &mut TcpLink { socket }, Instant::now(), on_report).await;
     end(socket).await;
     outcome
 }
@@ -116,8 +116,11 @@ pub async fn run_udp_client(
         socket,
         peer: Some(server),
         refused: None,
+        stash: &mut [],
+        kept: None,
+        ended: false,
     };
-    let outcome = run(client, &mut link, on_report).await?;
+    let outcome = run(client, &mut link, Instant::now(), on_report).await?;
     flush(socket).await;
     Ok(outcome)
 }
@@ -152,6 +155,7 @@ impl<'s> TcpServer<'s> {
             &mut TcpLink {
                 socket: &mut self.socket,
             },
+            Instant::now(),
             on_report,
         )
         .await;
@@ -163,19 +167,36 @@ impl<'s> TcpServer<'s> {
 /// A UDP server that runs one test at a time on one bound socket.
 ///
 /// A test belongs to the address and port of the datagram that started it, and the server ignores other
-/// datagrams until the test ends. After a refused test, it drops the later datagrams of that address and port,
-/// until another address and port is refused (D-6).
+/// datagrams until the test ends. Before then it takes datagrams from any address, so a late repeat of an old
+/// test's end does not take the server. Another address's datagram during the wait after the report ends the
+/// test, and the server keeps it in its stash as the next test's first. After a refused test, the server drops
+/// the later datagrams of that address and port, until another address and port is refused (D-6).
 pub struct UdpServer<'s> {
     socket: UdpSocket<'s>,
     refused: Option<IpEndpoint>,
+    stash: &'s mut [u8],
+    kept: Option<Kept>,
+}
+
+/// Another flow's datagram that ended a test, at the start of the stash.
+struct Kept {
+    len: usize,
+    from: IpEndpoint,
+    at: Instant,
 }
 
 impl<'s> UdpServer<'s> {
     /// A server on `socket`, which the caller has bound.
-    pub fn new(socket: UdpSocket<'s>) -> Self {
+    ///
+    /// `stash` holds the first datagram of a test that starts while the last test waits after its report, until
+    /// the next `run_one` (D-6). It must hold the client's datagram length, 1470 bytes by default. The server
+    /// drops a longer first datagram, and that test counts it as lost.
+    pub fn new(socket: UdpSocket<'s>, stash: &'s mut [u8]) -> Self {
         Self {
             socket,
             refused: None,
+            stash,
+            kept: None,
         }
     }
 
@@ -193,15 +214,30 @@ impl<'s> UdpServer<'s> {
         if config.transport != Transport::Udp || config.ipv6 || self.socket.endpoint().port == 0 {
             return Err(Error::Mismatch);
         }
+        let mut peer = None;
+        let start = match self.kept.take() {
+            Some(kept) => {
+                server.received(0, self.stash.get(..kept.len).unwrap_or_default());
+                if !server.waits_for_first() {
+                    peer = Some(kept.from);
+                }
+                kept.at
+            }
+            None => Instant::now(),
+        };
         let mut link = UdpLink {
             socket: &mut self.socket,
-            peer: None,
+            peer,
             refused: self.refused,
+            stash: self.stash,
+            kept: None,
+            ended: false,
         };
-        let outcome = run(server, &mut link, on_report).await?;
+        let outcome = run(server, &mut link, start, on_report).await?;
         if outcome == Err(TestError::Refused) {
             self.refused = link.peer;
         }
+        self.kept = link.kept;
         flush(&mut self.socket).await;
         Ok(outcome)
     }
@@ -240,15 +276,14 @@ impl Clock {
     }
 }
 
-/// Moves the bytes of `machine` over `link` until the test ends.
+/// Moves the bytes of `machine` over `link` until the test ends. The time counts from `start`.
 async fn run(
     machine: &mut impl Machine,
     link: &mut impl Link,
+    start: Instant,
     mut on_report: impl FnMut(&Report),
 ) -> Result<Result<(), TestError>, Error> {
-    let clock = Clock {
-        start: Instant::now(),
-    };
+    let clock = Clock { start };
     let mut closed = false;
     loop {
         if !closed && let Poll::Ready(close) = poll_once(link.read(machine, &clock)) {
@@ -341,20 +376,54 @@ struct UdpLink<'l, 's> {
     peer: Option<IpEndpoint>,
     /// The address and port of the last refused flow, whose datagrams a server drops.
     refused: Option<IpEndpoint>,
+    /// Where a server keeps another flow's datagram that ended its test, for the next test. A client's is empty.
+    stash: &'l mut [u8],
+    kept: Option<Kept>,
+    /// Whether another flow's datagram ended the test, so the link reads nothing more.
+    ended: bool,
 }
 
 impl Link for UdpLink<'_, '_> {
     async fn read(&mut self, machine: &mut impl Machine, clock: &Clock) -> bool {
-        let peer = &mut self.peer;
-        let refused = self.refused;
-        self.socket
+        if self.ended {
+            return false;
+        }
+        let Self {
+            socket,
+            peer,
+            refused,
+            stash,
+            kept,
+            ended,
+        } = self;
+        socket
             .recv_from_with(|bytes, meta| {
                 let from = meta.endpoint;
-                if refused == Some(from) || peer.is_some_and(|peer| peer != from) {
+                if *refused == Some(from) {
                     return;
                 }
-                *peer = Some(from);
+                if peer.is_some_and(|peer| peer != from) {
+                    // The stack has taken the datagram, so one that arrives in the turn before the report goes
+                    // out is lost, and the next test counts it.
+                    if machine.another_flow_arrived() {
+                        *ended = true;
+                        // A datagram longer than the stash is dropped rather than cut, so the next test counts
+                        // only whole datagrams.
+                        if let Some(to) = stash.get_mut(..bytes.len()) {
+                            to.copy_from_slice(bytes);
+                            *kept = Some(Kept {
+                                len: bytes.len(),
+                                from,
+                                at: Instant::now(),
+                            });
+                        }
+                    }
+                    return;
+                }
                 machine.received(clock.now_us(), bytes);
+                if peer.is_none() && !machine.waits_for_first() {
+                    *peer = Some(from);
+                }
             })
             .await;
         false

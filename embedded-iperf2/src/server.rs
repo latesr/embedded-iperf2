@@ -354,6 +354,29 @@ impl<'b> Server<'b> {
         }
     }
 
+    /// Whether a UDP server waits for the datagram that starts its test. Until then the caller passes it the
+    /// datagrams of every address, and the first datagram that starts or refuses a test fixes the address
+    /// (D-6).
+    pub fn waits_for_first(&self) -> bool {
+        matches!(self.state, State::UdpWaiting)
+    }
+
+    /// Records that a datagram from another address and port arrived. Returns whether the test ended for it,
+    /// so that the caller keeps the datagram as the first datagram of the next test (P-12, P-14).
+    pub fn another_flow_arrived(&mut self) -> bool {
+        // Before the first report is out, the old client has had nothing, so it keeps the server. A report owed
+        // for an end that just arrived is dropped, as the old client's later ends are.
+        let State::UdpReporting { report, sends, .. } = &self.state else {
+            return false;
+        };
+        if *sends == 0 {
+            return false;
+        }
+        let report = *report;
+        self.finish(report);
+        true
+    }
+
     /// Records that the client closed the TCP connection.
     pub fn closed(&mut self, now_us: u64) {
         if let State::TcpHeader { .. } = self.state {

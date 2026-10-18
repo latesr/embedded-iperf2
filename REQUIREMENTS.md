@@ -200,11 +200,11 @@ Every field is big-endian. Each offset counts from the start of the message. [Th
 
 **P-11** A UDP server starts a test at a datagram of at least 40 bytes with a packet ID above 0. It reads 64-bit packet IDs when the first datagram's `flags` have 0x08000000 set, and 32-bit IDs otherwise. It reads no test header when `flags` are 0x36373839.
 
-**P-12** A UDP server ends a test at a negative packet ID, and sends the server report of W-11. For each datagram that arrives within 250 ms of its last report, it sends the same report again, up to 9 reports.
+**P-12** A UDP server ends a test at a negative packet ID, and sends the server report of W-11. For each datagram that arrives within 250 ms of its last report, it sends the same report again, up to 9 reports. Once the report has gone out, a datagram from another address and port ends the test, and the repeats stop.
 
 **P-13** A server refuses a test whose test header asks for a mode outside v1. Such a header has 0x80000000 set without 0x04000000, or has any of 0x10000000 and 0x00800000 set, or has an `upperflags` or `lowerflags` bit other than 0x0400 set, or has a `numThreads` other than 1. A TCP server closes the connection. A UDP server ignores the flow.
 
-**P-14** A server runs one test at a time. It refuses a TCP connection, or ignores a UDP flow, that starts while a test runs.
+**P-14** A server runs one test at a time. It refuses a TCP connection, or ignores a UDP flow, that starts while a test runs. A UDP test that waits after its report, as P-12 states, is not running.
 
 **P-15** A server that the caller gave a duration ends a test at that duration from its first byte, whether or not the end of the test arrived, in every state until its final report.
 
@@ -234,7 +234,7 @@ Every field is big-endian. Each offset counts from the start of the message. [Th
 
 **D-5** Each driver supplies the core's time from a monotonic clock in microseconds.
 
-**D-6** While a UDP test runs, a driver passes its server only the datagrams from the address and port that sent the test's first datagram. After a server refuses a flow, the driver drops that flow's later datagrams, rather than start a new server for each.
+**D-6** Until a UDP server starts or refuses a test, a driver passes it the datagrams of every address and port. From then until the test ends, it passes only those of the address and port that started or refused it. A datagram from another address and port that ends a test, as P-12 states, is the first datagram the driver passes to the next server. After a server refuses a flow, the driver drops that flow's later datagrams, rather than start a new server for each.
 
 ## Security
 

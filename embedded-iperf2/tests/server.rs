@@ -628,6 +628,78 @@ fn udp_repeats_the_report_while_ends_arrive_then_finishes() {
 }
 
 #[test]
+fn another_flow_ends_the_report_wait_once_the_report_is_out() {
+    let mut buffer = [0; 2048];
+    let (mut server, now) = replay("udp", &mut buffer);
+    assert!(
+        !server.another_flow_arrived(),
+        "the report has not gone out"
+    );
+    let first = send(server.poll(now));
+    server.sent(first.len());
+    assert!(server.another_flow_arrived(), "(P-12, P-14)");
+    let last = report(server.poll(now + 1_000));
+    assert!(last.final_report);
+    assert_eq!(last.udp.unwrap().datagrams, 130);
+    assert_eq!(server.poll(now + 1_000), Action::Done(Ok(())));
+}
+
+#[test]
+fn a_udp_server_waits_for_first_until_a_datagram_starts_or_refuses_a_test() {
+    let mut buffer = [0; 2048];
+    let mut server = Server::new(udp(), &mut buffer).unwrap();
+    assert!(server.waits_for_first());
+    server.received(0, &udp_datagram(-7, 0, Some(&udp_header()), 512));
+    assert!(server.waits_for_first(), "an end of an old test");
+    server.received(0, &udp_datagram(1, 0, None, 39));
+    assert!(server.waits_for_first(), "too short (P-11)");
+    server.received(0, &udp_datagram(1, 0, Some(&udp_header()), 512));
+    assert!(!server.waits_for_first());
+
+    let mut server = Server::new(udp(), &mut buffer).unwrap();
+    let mut header = udp_header();
+    header.num_threads = 2;
+    server.received(0, &udp_datagram(1, 0, Some(&header), 512));
+    assert!(!server.waits_for_first(), "refused (P-13)");
+
+    assert!(!Server::new(tcp(), &mut buffer).unwrap().waits_for_first());
+}
+
+#[test]
+fn another_flow_does_not_end_a_udp_test_that_receives() {
+    let mut buffer = [0; 2048];
+    let mut server = Server::new(udp(), &mut buffer).unwrap();
+    assert!(!server.another_flow_arrived(), "before the first datagram");
+    server.received(100, &udp_datagram(1, 0, Some(&udp_header()), 512));
+    assert!(!server.another_flow_arrived());
+    assert_eq!(server.poll(200), Action::Wait { until_us: None });
+}
+
+#[test]
+fn another_flow_does_not_end_a_reverse_udp_test() {
+    let sample = common::read("udp-reverse");
+    let mut buffer = [0; 2048];
+    let mut server = Server::new(udp(), &mut buffer).unwrap();
+    server.received(0, &sample.client[0]);
+    assert!(!server.another_flow_arrived(), "while it sends");
+    let mut now = 0;
+    loop {
+        now += 1_000;
+        let Action::Send(datagram) = server.poll(now) else {
+            continue;
+        };
+        let (count, id) = (datagram.len(), Prefix::parse(datagram).unwrap().packet_id);
+        if id < 0 {
+            assert!(!server.another_flow_arrived(), "while it sends its end");
+            server.sent(count);
+            break;
+        }
+        server.sent(count);
+    }
+    assert_eq!(report(server.poll(now)).bytes, 129 * 512);
+}
+
+#[test]
 fn udp_sends_at_most_nine_reports() {
     let mut buffer = [0; 2048];
     let (mut server, now) = replay("udp", &mut buffer);

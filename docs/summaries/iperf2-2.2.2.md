@@ -112,6 +112,8 @@ Each claim links the file and line it comes from. The [iperf2](../entities/iperf
 
 - The server marks a flow 64-bit when the first datagram's `flags` have `HEADER_SEQNO64B` ([`src/Listener.cpp:1024`](https://sourceforge.net/p/iperf2/code/ci/74d4b55321b9e7827c6567f3e48ae024ba3417c8/tree/src/Listener.cpp#l1024)).
 - The server drops a first datagram whose ID is 0 or negative, as a leftover of an old test ([`src/Listener.cpp:1030`](https://sourceforge.net/p/iperf2/code/ci/74d4b55321b9e7827c6567f3e48ae024ba3417c8/tree/src/Listener.cpp#l1030)).
+- At a first datagram with a positive ID, the listener connects its socket to the sender and hands the socket to the flow's server thread ([`src/Listener.cpp:1068`](https://sourceforge.net/p/iperf2/code/ci/74d4b55321b9e7827c6567f3e48ae024ba3417c8/tree/src/Listener.cpp#l1068)).
+- The listener then opens a new listening socket on the port, so the next flow reaches the listener while the last flow's thread runs ([`src/Listener.cpp:1092`](https://sourceforge.net/p/iperf2/code/ci/74d4b55321b9e7827c6567f3e48ae024ba3417c8/tree/src/Listener.cpp#l1092)).
 - The server refuses a first datagram shorter than 40 bytes ([`src/Listener.cpp:1391`](https://sourceforge.net/p/iperf2/code/ci/74d4b55321b9e7827c6567f3e48ae024ba3417c8/tree/src/Listener.cpp#l1391)).
 - The server reads no header when `flags` are the `-C` fill 0x36373839 ([`src/Listener.cpp:1402`](https://sourceforge.net/p/iperf2/code/ci/74d4b55321b9e7827c6567f3e48ae024ba3417c8/tree/src/Listener.cpp#l1402)).
 - The server reads the header fields only when `HEADER_VERSION1`, `HEADER_VERSION2` or `HEADER_EXTEND` is set ([`src/Listener.cpp:1455`](https://sourceforge.net/p/iperf2/code/ci/74d4b55321b9e7827c6567f3e48ae024ba3417c8/tree/src/Listener.cpp#l1455)).

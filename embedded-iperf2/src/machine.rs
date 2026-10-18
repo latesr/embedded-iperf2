@@ -2,12 +2,18 @@
 
 use crate::{Action, Client, Server};
 
-/// The four calls a driver makes.
+/// The calls a driver makes. A client never waits for its first datagram and never gives up its peer.
 pub(crate) trait Machine {
     fn poll(&mut self, now_us: u64) -> Action<'_>;
     fn sent(&mut self, count: usize);
     fn received(&mut self, now_us: u64, bytes: &[u8]);
     fn closed(&mut self, now_us: u64);
+    fn waits_for_first(&self) -> bool {
+        false
+    }
+    fn another_flow_arrived(&mut self) -> bool {
+        false
+    }
 }
 
 impl Machine for Client<'_> {
@@ -37,5 +43,11 @@ impl Machine for Server<'_> {
     }
     fn closed(&mut self, now_us: u64) {
         Server::closed(self, now_us);
+    }
+    fn waits_for_first(&self) -> bool {
+        Server::waits_for_first(self)
+    }
+    fn another_flow_arrived(&mut self) -> bool {
+        Server::another_flow_arrived(self)
     }
 }

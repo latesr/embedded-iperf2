@@ -11,6 +11,7 @@ Covers: `Client` and `Server` in `embedded-iperf2`, and the modules under them: 
 - The caller supplies the buffer that each chunk or datagram is built in. The core doesn't allocate (D-1).
 - A sender fills its buffer once and then rewrites only the header bytes at its start: the test or burst header of a TCP chunk, and the prefix and header of a UDP datagram. The stock iperf does the same. A chunk or datagram then costs the sender almost nothing beyond the socket's copy, so a board measures its network rather than the sender.
 - A UDP server only sees the datagrams of its first client, and the driver enforces that. The core never holds an address, so it doesn't depend on the address type of any network stack (D-6).
+- A UDP server ends its wait after the report when another flow sends a datagram, and that datagram starts the next test. Back-to-back tests from new ports then lose none of their start, as with the stock server (P-12, P-14, D-6).
 - Jitter is kept in integer nanoseconds. A board without an FPU would pay for a floating point update on every datagram (P-17, P-18).
 - Bytes count toward the interval they arrived in, not the interval of the next `poll`. A driver that reads before it polls then reports each interval as the stock iperf does (P-19).
 - A close or a deadline in any state ends the test with a report of the bytes sent or received so far. Only a close before the whole TCP test header is an error, because a client in byte mode closes as soon as it has its bytes (P-10, P-15, P-16, P-24).
@@ -33,6 +34,12 @@ The caller passes a buffer at construction, and each `Send` borrows from it. A T
 
 A UDP server doesn't keep an address. The stock server connects its socket to the first datagram's sender. A driver does the same, or drops datagrams from other sources when its socket can't disconnect. The core never names an address type.
 
+Until a test starts, the driver passes the server the datagrams of every address, and `Server::waits_for_first` tells it when to fix the address. A stock listener drains the end datagrams of old tests from any address in the same way ([summary](../summaries/iperf2-2.2.2.md#how-the-server-reads-a-udp-flow)).
+
+After its report, a UDP server waits 250 ms of silence for repeats of the end of the test (P-12). The stock listener hands each flow a connected socket and a thread, and opens a new socket, so a new flow is served during that wait. Our server serves one flow at a time (P-14). A driver that sees another flow's datagram during the wait calls `Server::another_flow_arrived`, which ends the test once the report has gone out. The driver keeps the datagram for the next test. The `std` driver leaves it in the socket, and the `embassy-net` driver copies it to a stash the caller lends, because embassy-net 0.9.1 can't peek at a datagram.
+
+The rule costs one case that the stock server handles. When the network loses the report, the old client sends its end again. Once a new flow has ended the wait, those ends reach the new test, the driver drops them, and the old client ends without the server report.
+
 Jitter uses `J += (D - J) / 16` on `i64` nanoseconds. It can differ from the stock `double` in the last nanosecond. P-17 compares only the counts.
 
 `received` and `closed` may arrive in any state. Each state either uses the bytes or the close, or ignores them by rule:
@@ -50,6 +57,9 @@ Interval reports follow the bytes. `received` closes an interval that is due bef
 - **Four public role machines.** Rejected, because a driver must read the header before it knows the role.
 - **An async core over embedded-io-async.** Rejected, because UDP datagrams don't fit `Read` and `Write`, and a host tool would need an executor.
 - **A peer address in each `received`.** Rejected, because it brings an address type into the core for a rule the driver enforces anyway.
+- **A thread and a socket for each UDP flow, as the stock server has.** Rejected, because a board runs one test at a time (P-14), and the core and its drivers have no threads.
+- **The driver answers the old client's repeated ends while the next test runs.** It would keep the stock behaviour when a report is lost. Rejected, because it moves P-12 from the core into both drivers.
+- **The server's wait after the report as part of the running test.** Rejected, because a test that started within 250 ms of the last one lost its first datagrams. Back-to-back runs at 95 Mbit/s from an ESP32-S31 lost about 1,300 datagrams each. It was the first version.
 - **`f64` jitter.** Rejected, because a board without an FPU pays for it on every datagram.
 - **A fill that runs on unbroken across the stream, written into each chunk.** Rejected, because no reader checks the fill, and writing it cost the sender a pass over every chunk. On the ESP32-S31 that held TCP upload to 29.5 Mbit/s, where a plain socket loop sends 57. It was the first version.
 - **Intervals closed only in `poll`.** Rejected, because a driver that reads before it polls counted bytes in the interval before the one they arrived in. It was the first version.

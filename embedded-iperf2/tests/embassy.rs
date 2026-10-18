@@ -20,8 +20,8 @@ use embedded_iperf2::embassy::{Error, TcpServer, UdpServer, run_tcp_client, run_
 use embedded_iperf2::wire::{Amount, PREFIX_LEN, Prefix, TestHeader, Timestamp};
 use embedded_iperf2::{Client, Config, Length, Server, ServerConfig, TestError, Transport};
 use stacks::{
-    PORT, SERVER, TcpBuffers, UdpBuffers, client, run, serve, server_config, since, tcp_client,
-    tcp_once, udp_client, udp_once,
+    CLIENT, PORT, SERVER, STASH, TcpBuffers, UdpBuffers, client, run, serve, server_config, since,
+    tcp_client, tcp_once, udp_client, udp_once,
 };
 
 /// The RST bit of a TCP header's flags.
@@ -291,7 +291,8 @@ fn a_udp_server_ignores_datagrams_from_another_peer_during_a_test() {
 fn a_udp_server_drops_a_refused_flow_and_serves_the_next_test() {
     run(async |net| {
         let mut server_buffers = UdpBuffers::new();
-        let mut driver = UdpServer::new(server_buffers.bound(net.server, PORT));
+        let mut stash = [0; STASH];
+        let mut driver = UdpServer::new(server_buffers.bound(net.server, PORT), &mut stash);
         // The refused flow sends on. The first test takes only its first datagram. Were the rest passed to the
         // second test, they would end it as refused before the client's first datagram arrives.
         let mut refused_buffers = UdpBuffers::new();
@@ -327,6 +328,156 @@ fn a_udp_server_drops_a_refused_flow_and_serves_the_next_test() {
     });
 }
 
+/// Runs `count` UDP tests in a row on `driver`, and returns each end with the time its `run_one` returned.
+async fn serve_in_a_row(driver: &mut UdpServer<'_>, count: usize) -> Vec<(stacks::Ended, Instant)> {
+    let mut ends = Vec::new();
+    for _ in 0..count {
+        let end = udp_once(driver, server_config(Transport::Udp)).await;
+        ends.push((end, Instant::now()));
+    }
+    ends
+}
+
+fn udp_bytes(buf_len: u32) -> Config {
+    Config {
+        length: Length::Bytes(10 * u64::from(buf_len)),
+        buf_len,
+        ..Config::udp()
+    }
+}
+
+/// The end of the test, as a stock client's late repeat of it, from an old test.
+fn old_end() -> Vec<u8> {
+    let mut datagram = first_datagram(1);
+    Prefix {
+        packet_id: -11,
+        sent: Timestamp { sec: 0, usec: 0 },
+    }
+    .encode(&mut datagram)
+    .unwrap();
+    datagram
+}
+
+#[test]
+fn a_udp_test_that_starts_during_the_last_report_wait_loses_nothing() {
+    run(async |net| {
+        let mut buffers = UdpBuffers::new();
+        let mut stash = [0; STASH];
+        let mut driver = UdpServer::new(buffers.bound(net.server, PORT), &mut stash);
+        let clients = async {
+            let first = client(net, udp_bytes(512)).await;
+            let second = client(net, udp_bytes(512)).await;
+            (first, second)
+        };
+        let (ends, (first, second)) = join(serve_in_a_row(&mut driver, 2), clients).await;
+        assert_eq!((first.outcome, second.outcome), (Ok(Ok(())), Ok(Ok(()))));
+        let served = ends[1].0.last();
+        assert_eq!(served.bytes, second.last().bytes, "(P-12, P-14, D-6)");
+        assert_eq!(served.bytes, 5_120 + 512);
+        assert_eq!(served.udp.unwrap().lost, 0);
+    });
+}
+
+#[test]
+fn a_first_datagram_longer_than_the_stash_is_lost() {
+    run(async |net| {
+        let mut buffers = UdpBuffers::new();
+        let mut stash = [0; 600];
+        let mut driver = UdpServer::new(buffers.bound(net.server, PORT), &mut stash);
+        let clients = async {
+            let first = client(net, udp_bytes(512)).await;
+            let second = client(net, udp_bytes(1000)).await;
+            (first, second)
+        };
+        let (ends, (first, second)) = join(serve_in_a_row(&mut driver, 2), clients).await;
+        assert_eq!((first.outcome, second.outcome), (Ok(Ok(())), Ok(Ok(()))));
+        let served = ends[1].0.last();
+        assert_eq!(served.bytes, second.last().bytes - 1000, "dropped, not cut");
+        assert_eq!(served.udp.unwrap().lost, 1);
+    });
+}
+
+#[test]
+fn an_old_end_from_another_port_does_not_take_the_server() {
+    run(async |net| {
+        let mut buffers = UdpBuffers::new();
+        let mut stash = [0; STASH];
+        let mut driver = UdpServer::new(buffers.bound(net.server, PORT), &mut stash);
+        let mut stray_buffers = UdpBuffers::new();
+        let stray = stray_buffers.bound(net.client, 0);
+        stray.send_to(&old_end(), (SERVER, PORT)).await.unwrap();
+        let clients = async {
+            let first = client(net, udp_bytes(512)).await;
+            stray.send_to(&old_end(), (SERVER, PORT)).await.unwrap();
+            let second = client(net, udp_bytes(512)).await;
+            (first, second)
+        };
+        let (ends, (first, second)) = join(serve_in_a_row(&mut driver, 2), clients).await;
+        assert_eq!((first.outcome, second.outcome), (Ok(Ok(())), Ok(Ok(()))));
+        for (end, _) in &ends {
+            assert_eq!(end.last().bytes, 5_120 + 512, "(D-6)");
+        }
+    });
+}
+
+#[test]
+fn a_refused_flow_does_not_end_the_report_wait() {
+    run(async |net| {
+        let mut buffers = UdpBuffers::new();
+        let mut stash = [0; STASH];
+        let mut driver = UdpServer::new(buffers.bound(net.server, PORT), &mut stash);
+        let mut refused_buffers = UdpBuffers::new();
+        let refused = refused_buffers.bound(net.client, 0);
+        refused
+            .send_to(&first_datagram(2), (SERVER, PORT))
+            .await
+            .unwrap();
+        let clients = async {
+            Timer::after(Duration::from_millis(100)).await;
+            let ended = client(net, udp_bytes(512)).await;
+            let reported = Instant::now();
+            refused
+                .send_to(&first_datagram(2), (SERVER, PORT))
+                .await
+                .unwrap();
+            (ended, reported)
+        };
+        let (ends, (ended, reported)) = join(serve_in_a_row(&mut driver, 2), clients).await;
+        assert_eq!(ends[0].0.outcome, Ok(Err(TestError::Refused)));
+        assert_eq!((ended.outcome, ends[1].0.outcome), (Ok(Ok(())), Ok(Ok(()))));
+        let waited = ends[1].1 - reported;
+        assert!(waited >= Duration::from_millis(200), "waited {waited:?}");
+    });
+}
+
+#[test]
+fn a_udp_client_reads_on_past_a_datagram_from_another_address() {
+    run(async |net| {
+        let mut client_buffers = UdpBuffers::new();
+        let mut socket = client_buffers.bound(net.client, 6001);
+        let mut stray_buffers = UdpBuffers::new();
+        let stray = stray_buffers.bound(net.server, 0);
+        let config = Config {
+            length: Length::Time { us: 300_000 },
+            buf_len: 512,
+            rate: 1_000_000,
+            ..Config::udp()
+        };
+        let strays = async {
+            Timer::after(Duration::from_millis(100)).await;
+            stray.send_to(&old_end(), (CLIENT, 6001)).await.unwrap();
+        };
+        let (server, client, ()) = join3(
+            serve(net, server_config(Transport::Udp)),
+            udp_client(&mut socket, config),
+            strays,
+        )
+        .await;
+        assert_eq!(server.outcome, Ok(Ok(())));
+        assert!(client.last().server.is_some(), "the report after the stray");
+    });
+}
+
 #[test]
 fn a_driver_refuses_a_socket_or_settings_that_do_not_fit_the_test() {
     run(async |net| {
@@ -350,7 +501,8 @@ fn a_driver_refuses_a_socket_or_settings_that_do_not_fit_the_test() {
                 }
                 Transport::Udp => {
                     let mut buffers = UdpBuffers::new();
-                    let mut driver = UdpServer::new(buffers.bound(net.server, PORT));
+                    let mut stash = [0; STASH];
+                    let mut driver = UdpServer::new(buffers.bound(net.server, PORT), &mut stash);
                     driver.run_one(&mut server, |_| {}).await
                 }
             };

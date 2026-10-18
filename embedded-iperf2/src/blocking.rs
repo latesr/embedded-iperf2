@@ -55,6 +55,7 @@ pub fn run_client(
                 socket: &socket,
                 peer: Some(server),
                 refused: None,
+                kept: false,
             };
             run(client, &mut link, on_report)
         }
@@ -100,11 +101,10 @@ impl TcpServer {
 /// A UDP server that runs one test at a time on a socket.
 ///
 /// A test belongs to the address and port of the datagram that started it, and the server ignores other
-/// datagrams until the test ends. After a refused test, it drops the later datagrams of that address and port,
-/// until another address and port is refused (D-6).
-///
-/// A datagram that the last peer sends after its test ended, such as a repeat of its end of the test, starts the
-/// next test. The core refuses it, so that peer's later datagrams are dropped.
+/// datagrams until the test ends. Before then it takes datagrams from any address, so a late repeat of an old
+/// test's end does not take the server. Another address's datagram during the wait after the report ends the
+/// test and stays in the socket as the next test's first. After a refused test, the server drops the later
+/// datagrams of that address and port, until another address and port is refused (D-6).
 #[derive(Debug)]
 pub struct UdpServer {
     socket: UdpSocket,
@@ -146,6 +146,7 @@ impl UdpServer {
             socket: &self.socket,
             peer: None,
             refused: self.refused,
+            kept: false,
         };
         let outcome = run(server, &mut link, on_report)?;
         if outcome == Err(TestError::Refused) {
@@ -173,8 +174,15 @@ enum Written {
 
 /// A connection or a socket, as the loop sees it.
 trait Link {
-    /// Reads one chunk or datagram into `buffer`. With `wait` of `None`, takes only what has already arrived.
-    fn read(&mut self, buffer: &mut [u8], wait: Option<Duration>) -> io::Result<Arrived>;
+    /// Reads one chunk or datagram into `buffer` and passes it to `machine`, at the time `now` gives once it
+    /// arrived. With `wait` of `None`, takes only what has already arrived. Returns whether the peer closed.
+    fn read(
+        &mut self,
+        machine: &mut impl Machine,
+        buffer: &mut [u8],
+        wait: Option<Duration>,
+        now: &impl Fn() -> u64,
+    ) -> io::Result<bool>;
     fn write(&mut self, bytes: &[u8]) -> io::Result<Written>;
     fn close_write(&mut self) -> io::Result<()>;
 }
@@ -191,7 +199,7 @@ fn run(
     let mut closed = false;
     loop {
         if !closed {
-            closed = deliver(machine, link.read(&mut buffer, None)?, &buffer, now());
+            closed = link.read(machine, &mut buffer, None, &now)?;
         }
         let now_us = now();
         match machine.poll(now_us) {
@@ -209,7 +217,7 @@ fn run(
                 if closed {
                     std::thread::sleep(wait);
                 } else {
-                    closed = deliver(machine, link.read(&mut buffer, Some(wait))?, &buffer, now());
+                    closed = link.read(machine, &mut buffer, Some(wait), &now)?;
                 }
             }
             Action::Report(report) => on_report(&report),
@@ -262,7 +270,13 @@ impl<'l> TcpLink<'l> {
 }
 
 impl Link for TcpLink<'_> {
-    fn read(&mut self, buffer: &mut [u8], wait: Option<Duration>) -> io::Result<Arrived> {
+    fn read(
+        &mut self,
+        machine: &mut impl Machine,
+        buffer: &mut [u8],
+        wait: Option<Duration>,
+        now: &impl Fn() -> u64,
+    ) -> io::Result<bool> {
         self.refuse_waiting();
         let read = match wait {
             None => {
@@ -277,7 +291,7 @@ impl Link for TcpLink<'_> {
                 self.stream.read(buffer)
             }
         };
-        tcp_read(read)
+        Ok(deliver(machine, tcp_read(read)?, buffer, now()))
     }
 
     fn write(&mut self, bytes: &[u8]) -> io::Result<Written> {
@@ -296,37 +310,54 @@ struct UdpLink<'s> {
     peer: Option<SocketAddr>,
     /// The address and port of the last refused flow, whose datagrams a server drops.
     refused: Option<SocketAddr>,
+    /// Whether another flow's datagram ended the test. It stays in the socket for the next test, so the link
+    /// reads nothing more.
+    kept: bool,
 }
 
 impl Link for UdpLink<'_> {
-    fn read(&mut self, buffer: &mut [u8], wait: Option<Duration>) -> io::Result<Arrived> {
-        let read = match wait {
+    fn read(
+        &mut self,
+        machine: &mut impl Machine,
+        buffer: &mut [u8],
+        wait: Option<Duration>,
+        now: &impl Fn() -> u64,
+    ) -> io::Result<bool> {
+        if self.kept {
+            return Ok(false);
+        }
+        let peeked = match wait {
             None => {
                 self.socket.set_nonblocking(true)?;
-                let read = self.socket.recv_from(buffer);
+                let peeked = self.socket.peek_from(buffer);
                 self.socket.set_nonblocking(false)?;
-                read
+                peeked
             }
             Some(wait) => {
                 self.socket
                     .set_read_timeout(Some(wait.max(Duration::from_micros(1))))?;
-                self.socket.recv_from(buffer)
+                self.socket.peek_from(buffer)
             }
         };
-        let Some((count, from)) = udp_read(read)? else {
-            return Ok(Arrived::Nothing);
+        let Some((_, from)) = udp_read(peeked)? else {
+            return Ok(false);
         };
-        if self.refused == Some(from) {
-            return Ok(Arrived::Nothing);
+        let refused = self.refused == Some(from);
+        let ours = self.peer.is_none_or(|peer| peer == from);
+        if !refused && !ours && machine.another_flow_arrived() {
+            self.kept = true;
+            return Ok(false);
         }
-        match self.peer {
-            Some(peer) if peer != from => Ok(Arrived::Nothing),
-            Some(_) => Ok(Arrived::Bytes(count)),
-            None => {
+        let Some((count, _)) = udp_read(self.socket.recv_from(buffer))? else {
+            return Ok(false);
+        };
+        if !refused && ours {
+            machine.received(now(), buffer.get(..count).unwrap_or_default());
+            if self.peer.is_none() && !machine.waits_for_first() {
                 self.peer = Some(from);
-                Ok(Arrived::Bytes(count))
             }
         }
+        Ok(false)
     }
 
     fn write(&mut self, bytes: &[u8]) -> io::Result<Written> {

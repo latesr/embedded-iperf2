@@ -239,6 +239,93 @@ fn a_udp_server_drops_a_refused_flow_and_serves_the_next_test() {
     assert_eq!(client.get().outcome, Ok(()));
 }
 
+/// Runs `count` UDP tests in a row on `socket`, and returns each end with the time its `run_one` returned.
+fn serve_in_a_row(socket: UdpSocket, count: usize) -> loopback::Pending<Vec<(End, Instant)>> {
+    spawn(move || {
+        let mut driver = UdpServer::new(socket);
+        let mut buffer = vec![0; 4096];
+        let mut ends = Vec::new();
+        for _ in 0..count {
+            let mut server = Server::new(server_config(Transport::Udp), &mut buffer).unwrap();
+            let mut reports = Vec::new();
+            let outcome = driver
+                .run_one(&mut server, |report| reports.push(*report))
+                .unwrap();
+            ends.push((End { reports, outcome }, Instant::now()));
+        }
+        ends
+    })
+}
+
+fn udp_bytes() -> Config {
+    Config {
+        length: Length::Bytes(5_120),
+        buf_len: 512,
+        ..Config::udp()
+    }
+}
+
+/// The end of the test, as a stock client's late repeat of it, from an old test.
+fn old_end() -> Vec<u8> {
+    let mut datagram = first_datagram(1);
+    Prefix {
+        packet_id: -11,
+        sent: Timestamp { sec: 0, usec: 0 },
+    }
+    .encode(&mut datagram)
+    .unwrap();
+    datagram
+}
+
+#[test]
+fn a_udp_test_that_starts_during_the_last_report_wait_loses_nothing() {
+    let socket = UdpSocket::bind("127.0.0.1:0").unwrap();
+    let address = socket.local_addr().unwrap();
+    let servers = serve_in_a_row(socket, 2);
+    let first = run(udp_bytes(), address);
+    let second = run(udp_bytes(), address);
+    let ends = servers.get();
+    assert_eq!((first.outcome, second.outcome), (Ok(()), Ok(())));
+    let served = ends[1].0.last();
+    assert_eq!(served.bytes, 5_120 + 512, "(P-12, P-14)");
+    assert_eq!(served.udp.unwrap().lost, 0);
+    assert!(second.last().server.is_some());
+}
+
+#[test]
+fn an_old_end_from_another_port_does_not_take_the_server() {
+    let socket = UdpSocket::bind("127.0.0.1:0").unwrap();
+    let address = socket.local_addr().unwrap();
+    let stray = UdpSocket::bind("127.0.0.1:0").unwrap();
+    stray.send_to(&old_end(), address).unwrap();
+    let servers = serve_in_a_row(socket, 2);
+    let first = run(udp_bytes(), address);
+    stray.send_to(&old_end(), address).unwrap();
+    let second = run(udp_bytes(), address);
+    let ends = servers.get();
+    assert_eq!((first.outcome, second.outcome), (Ok(()), Ok(())));
+    for (end, _) in &ends {
+        assert_eq!(end.last().bytes, 5_120 + 512, "(D-6)");
+    }
+}
+
+#[test]
+fn a_refused_flow_does_not_end_the_report_wait() {
+    let socket = UdpSocket::bind("127.0.0.1:0").unwrap();
+    let address = socket.local_addr().unwrap();
+    let refused = UdpSocket::bind("127.0.0.1:0").unwrap();
+    refused.send_to(&first_datagram(2), address).unwrap();
+    let servers = serve_in_a_row(socket, 2);
+    let client = run(udp_bytes(), address);
+    let reported = Instant::now();
+    refused.send_to(&first_datagram(2), address).unwrap();
+    let ends = servers.get();
+    assert_eq!(ends[0].0.outcome, Err(TestError::Refused));
+    assert_eq!((client.outcome, ends[1].0.outcome), (Ok(()), Ok(())));
+    let waited = ends[1].1.duration_since(reported);
+    assert!(waited >= Duration::from_millis(200), "waited {waited:?}");
+}
+
 #[test]
 fn a_reverse_udp_test_over_ipv6_sends_datagrams_of_1450_bytes() {
     let (address, server) = serve(ServerConfig {
