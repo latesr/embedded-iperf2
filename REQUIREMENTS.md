@@ -238,6 +238,8 @@ Every field is big-endian. Each offset counts from the start of the message. [Th
 
 **D-6** Until a UDP server starts or refuses a test, a driver passes it the datagrams of every address and port. From then until the test ends, it passes only those of the address and port that started or refused it. A datagram from another address and port that ends a test, as P-12 states, is the first datagram the driver passes to the next server. After a server refuses a flow, the driver drops that flow's later datagrams, rather than start a new server for each.
 
+**D-7** A `std` server given a start timeout fails `run_one` with an error of kind `TimedOut` when no TCP connection, and no datagram that starts or refuses a UDP test, arrives within it. The server can then run another test. Without a start timeout, it waits without a limit. A start timeout of zero is refused.
+
 ## Security
 
 - The server reads bytes from the network. Each length and offset is checked before use (W-12). A header the server cannot read refuses the test, and never panics.

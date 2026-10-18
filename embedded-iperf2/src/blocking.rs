@@ -24,6 +24,9 @@ const LONGEST_WAIT: Duration = Duration::from_millis(100);
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 /// The length of the driver's receive buffer, which holds the longest UDP datagram.
 const RECEIVE_LEN: usize = 65_536;
+/// How often a server with a start timeout looks for a connection. The server's clock starts at the first bytes it
+/// reads, so a connection accepted late starts it up to this much late.
+const ACCEPT_POLL: Duration = Duration::from_millis(1);
 /// How many sends of one datagram in a row may fail, a millisecond apart, before the driver gives up. A host
 /// refuses a UDP send for a moment when its socket buffer is full.
 const UDP_SEND_TRIES: u32 = 1_000;
@@ -43,7 +46,7 @@ pub fn run_client(
         Transport::Tcp => {
             let stream = TcpStream::connect_timeout(&server, CONNECT_TIMEOUT)?;
             let mut link = TcpLink::new(stream, None)?;
-            run(client, &mut link, on_report)
+            run(client, &mut link, None, on_report)
         }
         Transport::Udp => {
             let local = match server {
@@ -57,7 +60,7 @@ pub fn run_client(
                 refused: None,
                 kept: false,
             };
-            run(client, &mut link, on_report)
+            run(client, &mut link, None, on_report)
         }
     }
 }
@@ -66,19 +69,32 @@ pub fn run_client(
 #[derive(Debug)]
 pub struct TcpServer {
     listener: TcpListener,
+    start_timeout: Option<Duration>,
 }
 
 impl TcpServer {
-    /// A server on `listener`.
+    /// A server on `listener`, whose `run_one` waits for a connection without a limit.
     pub fn new(listener: TcpListener) -> Self {
-        Self { listener }
+        Self {
+            listener,
+            start_timeout: None,
+        }
+    }
+
+    /// Sets how long `run_one` waits for a connection, as D-7 states. `None` waits without a limit.
+    ///
+    /// Returns an error of kind `InvalidInput` for a timeout of zero.
+    pub fn set_start_timeout(&mut self, timeout: Option<Duration>) -> io::Result<()> {
+        self.start_timeout = nonzero(timeout)?;
+        Ok(())
     }
 
     /// Waits for a connection and runs the test of `server` on it, and returns how the test ended. While the
     /// test runs, the driver closes each other connection as it arrives (P-14).
     ///
-    /// Returns an error of kind `InvalidInput` when `server` is not a TCP server, or an error when a socket
-    /// fails.
+    /// Returns an error of kind `TimedOut` when no connection arrives within the start timeout, and the server
+    /// can then run another test. Returns an error of kind `InvalidInput` when `server` is not a TCP server, or
+    /// an error when a socket fails.
     pub fn run_one(
         &mut self,
         server: &mut Server<'_>,
@@ -90,11 +106,58 @@ impl TcpServer {
                 "a TcpServer runs a TCP server",
             ));
         }
-        self.listener.set_nonblocking(false)?;
-        let (stream, _) = self.listener.accept()?;
+        let stream = match self.start_timeout {
+            None => {
+                self.listener.set_nonblocking(false)?;
+                self.listener.accept()?.0
+            }
+            Some(timeout) => accept_within(&self.listener, timeout)?,
+        };
         self.listener.set_nonblocking(true)?;
         let mut link = TcpLink::new(stream, Some(&self.listener))?;
-        run(server, &mut link, on_report)
+        run(server, &mut link, None, on_report)
+    }
+}
+
+/// `timeout`, or an error of kind `InvalidInput` when it is zero, as for std's socket timeouts.
+fn nonzero(timeout: Option<Duration>) -> io::Result<Option<Duration>> {
+    if timeout == Some(Duration::ZERO) {
+        return Err(io::Error::new(
+            ErrorKind::InvalidInput,
+            "a start timeout of zero",
+        ));
+    }
+    Ok(timeout)
+}
+
+/// The error of a server whose test did not start within its start timeout.
+fn not_started() -> io::Error {
+    io::Error::new(
+        ErrorKind::TimedOut,
+        "no test started within the start timeout",
+    )
+}
+
+/// Accepts a connection on `listener`, or fails with `TimedOut` after `timeout`. std has no accept with a
+/// timeout, so the listener is polled.
+fn accept_within(listener: &TcpListener, timeout: Duration) -> io::Result<TcpStream> {
+    listener.set_nonblocking(true)?;
+    let start = Instant::now();
+    loop {
+        match listener.accept() {
+            Ok((stream, _)) => {
+                // A stream accepted from a non-blocking listener is non-blocking on BSD and macOS, and the link's
+                // reads with a wait need it to block.
+                stream.set_nonblocking(false)?;
+                return Ok(stream);
+            }
+            Err(error) if error.kind() == ErrorKind::WouldBlock => {}
+            Err(error) => return Err(error),
+        }
+        if start.elapsed() >= timeout {
+            return Err(not_started());
+        }
+        std::thread::sleep(ACCEPT_POLL);
     }
 }
 
@@ -109,21 +172,33 @@ impl TcpServer {
 pub struct UdpServer {
     socket: UdpSocket,
     refused: Option<SocketAddr>,
+    start_timeout: Option<Duration>,
 }
 
 impl UdpServer {
-    /// A server on `socket`.
+    /// A server on `socket`, whose `run_one` waits for a test to start without a limit.
     pub fn new(socket: UdpSocket) -> Self {
         Self {
             socket,
             refused: None,
+            start_timeout: None,
         }
+    }
+
+    /// Sets how long `run_one` waits for a datagram that starts or refuses a test, as D-7 states. `None` waits
+    /// without a limit.
+    ///
+    /// Returns an error of kind `InvalidInput` for a timeout of zero.
+    pub fn set_start_timeout(&mut self, timeout: Option<Duration>) -> io::Result<()> {
+        self.start_timeout = nonzero(timeout)?;
+        Ok(())
     }
 
     /// Waits for the first datagram of a test and runs the test of `server`, and returns how the test ended.
     ///
-    /// Returns an error of kind `InvalidInput` when `server` is not a UDP server, or when its `ipv6` setting does
-    /// not match the family of the socket's address. Returns an error when the socket fails.
+    /// Returns an error of kind `TimedOut` when no test starts within the start timeout, and the server can then
+    /// run another test. Returns an error of kind `InvalidInput` when `server` is not a UDP server, or when its
+    /// `ipv6` setting does not match the family of the socket's address. Returns an error when the socket fails.
     pub fn run_one(
         &mut self,
         server: &mut Server<'_>,
@@ -148,7 +223,7 @@ impl UdpServer {
             refused: self.refused,
             kept: false,
         };
-        let outcome = run(server, &mut link, on_report)?;
+        let outcome = run(server, &mut link, self.start_timeout, on_report)?;
         if outcome == Err(TestError::Refused) {
             self.refused = link.peer;
         }
@@ -187,14 +262,18 @@ trait Link {
     fn close_write(&mut self) -> io::Result<()>;
 }
 
-/// Moves the bytes of `machine` over `link` until the test ends.
+/// Moves the bytes of `machine` over `link` until the test ends. A machine that still waits for its first datagram
+/// `start_timeout` after the call fails with `TimedOut`.
 fn run(
     machine: &mut impl Machine,
     link: &mut impl Link,
+    start_timeout: Option<Duration>,
     mut on_report: impl FnMut(&Report),
 ) -> io::Result<Result<(), TestError>> {
     let start = Instant::now();
     let now = || u64::try_from(start.elapsed().as_micros()).unwrap_or(u64::MAX);
+    let start_deadline_us =
+        start_timeout.map(|timeout| u64::try_from(timeout.as_micros()).unwrap_or(u64::MAX));
     let mut buffer = vec![0; RECEIVE_LEN];
     let mut closed = false;
     loop {
@@ -211,9 +290,18 @@ fn run(
                 }
             },
             Action::Wait { until_us } => {
-                let wait = until_us.map_or(LONGEST_WAIT, |until| {
+                let mut wait = until_us.map_or(LONGEST_WAIT, |until| {
                     Duration::from_micros(until.saturating_sub(now_us)).min(LONGEST_WAIT)
                 });
+                if let Some(deadline) = start_deadline_us
+                    && machine.waits_for_first()
+                {
+                    let left = deadline.saturating_sub(now_us);
+                    if left == 0 {
+                        return Err(not_started());
+                    }
+                    wait = wait.min(Duration::from_micros(left));
+                }
                 if closed {
                     std::thread::sleep(wait);
                 } else {

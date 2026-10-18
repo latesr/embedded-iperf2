@@ -21,6 +21,10 @@ exclude_re = [
     # A client's link starts with the server as its peer, so no driver asks a client whether it waits for its
     # first datagram, and the default's value cannot change behaviour.
     'replace Machine::waits_for_first -> bool with true',
+    # The mutant retries every accept error until the start timeout, and then reports `TimedOut` in place of the
+    # error. Only a fault such as running out of file descriptors makes accept fail on loopback with anything but
+    # `WouldBlock`, and a test cannot cause one without `unsafe` resource limits.
+    'replace match guard error.kind\(\) == ErrorKind::WouldBlock with true in accept_within',
 ]
 
 # The tests whose names start with `stock_` run a stock iperf for about ten seconds, and would run once for each

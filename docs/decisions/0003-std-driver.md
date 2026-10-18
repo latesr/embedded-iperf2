@@ -10,6 +10,7 @@ Covers: the `blocking` module of `embedded-iperf2`, behind the `std` feature.
 - The driver uses ordinary blocking `std::net` sockets and runs on the caller's thread. It doesn't start a thread, and it doesn't need an async runtime (D-2).
 - The driver checks the socket for new data before every call to `poll`. This ensures a client that sends as fast as possible still sees the server close the connection, and a TCP server sees new connections (P-14, P-24).
 - A UDP server ignores datagrams from any address other than its current client's. It checks the source of each datagram itself, so the next test can come from a different client (D-6).
+- A server can limit how long `run_one` waits for a test to start. A TCP server with a limit polls a non-blocking accept, so the `std` feature doesn't need another dependency (D-7).
 
 ## Context
 
@@ -23,6 +24,8 @@ The simplest driver only reads when the core asks it to wait. That's enough for 
 
 The stock server connects its UDP socket to its first client, and the kernel then drops datagrams from other addresses. `std` can't disconnect a UDP socket, so a server that connected could only ever serve its first client.
 
+A server waits for its client without a limit. A test tool that runs the server on a thread then keeps a blocked thread when the board under test never connects. A tool that serves test after test until Ctrl-C needs `run_one` to return now and then, so it can stop. `std` has no accept with a timeout, and nothing can wake a blocking accept. `TcpListener` has no shutdown, and a connection from the server's own address to wake it would start a test.
+
 ## Decision
 
 `run_client`, `TcpServer::run_one` and `UdpServer::run_one` take the client or server by `&mut`, and block on the caller's thread until the test ends. Each returns `io::Result<Result<(), TestError>>`. The outer error is the socket's, and the inner one is the test's.
@@ -31,6 +34,8 @@ Each turn of the driver's loop reads whatever has arrived without blocking, then
 
 The UDP server reads with `recv_from` and replies with `send_to`. It takes the source of the first datagram as its client, and drops datagrams from other sources until the test ends.
 
+`set_start_timeout` on each server limits the wait for a test to start, and `run_one` then fails with `TimedOut`. It is a setting, as std's socket timeouts are, so `run_one` keeps one signature. A TCP server with a limit makes its listener non-blocking and polls `accept` each millisecond. Without a limit, it keeps the blocking accept. The poll can accept a connection up to 1 ms late, and the server's clock starts at the first bytes it reads, so the clock can start up to 1 ms late. A UDP server already waits with a read timeout, and caps it at the deadline while the core waits for its first datagram. A test that has started ends only through the core's limits.
+
 ## Alternatives
 
 - **The driver creates the client or server from a `Config`.** Rejected, because every caller would have to handle a settings error on every run.
@@ -38,6 +43,8 @@ The UDP server reads with `recv_from` and replies with `send_to`. It takes the s
 - **Only read while the core waits.** Rejected, because a sender without a rate limit misses the peer closing and a second client connecting. A reverse TCP test at rate 0 shows it.
 - **A second thread that reads.** Rejected, because one read before each poll does the same without a thread and a channel.
 - **A connected UDP socket.** Rejected, because `std` can't disconnect it.
+- **An accept with a timeout from `socket2`.** Rejected, because it adds a dependency to the `std` feature, and the poll costs at most 1 ms before a test.
+- **A deadline as a parameter of `run_one`, or a second method that takes one.** Rejected, because a parameter breaks every caller and a second method does the same work as the first.
 
 ## Consequences
 

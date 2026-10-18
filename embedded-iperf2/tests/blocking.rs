@@ -1,5 +1,5 @@
 //! The `std` driver: our client against our server on loopback, in each mode, and the rules that only a driver
-//! keeps (P-14, D-4, D-5, D-6).
+//! keeps (P-14, D-4, D-5, D-6, D-7).
 
 #![cfg(feature = "std")]
 #![allow(
@@ -14,10 +14,10 @@ mod loopback;
 
 use embedded_iperf2::blocking::{TcpServer, UdpServer};
 use embedded_iperf2::wire::{Amount, PREFIX_LEN, Prefix, TestHeader, Timestamp};
-use embedded_iperf2::{Config, Length, Server, ServerConfig, TestError, Transport};
+use embedded_iperf2::{Config, Length, Report, Server, ServerConfig, TestError, Transport};
 use loopback::{End, run, serve, server_config, spawn, start};
 use std::io::{ErrorKind, Read};
-use std::net::{TcpListener, TcpStream, UdpSocket};
+use std::net::{SocketAddr, TcpListener, TcpStream, UdpSocket};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -374,4 +374,141 @@ fn a_server_refuses_settings_that_do_not_match_its_socket() {
     assert_eq!(refusal(udp_on_tcp), ErrorKind::InvalidInput);
     assert_eq!(refusal(ipv6_on_ipv4), ErrorKind::InvalidInput);
     assert_eq!(refusal(tcp_on_udp), ErrorKind::InvalidInput);
+}
+
+/// Each `run_one` of a server with a start timeout: its test, or the kind of its error, and how long it took.
+type Timed = Vec<(Result<End, ErrorKind>, Duration)>;
+
+/// Runs `count` tests in a row on a server of `transport` whose start timeout is `timeout`.
+fn serve_with_start_timeout(
+    transport: Transport,
+    timeout: Duration,
+    count: usize,
+) -> (SocketAddr, loopback::Pending<Timed>) {
+    enum Driver {
+        Tcp(TcpServer),
+        Udp(UdpServer),
+    }
+    let (address, mut driver) = match transport {
+        Transport::Tcp => {
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            (
+                listener.local_addr().unwrap(),
+                Driver::Tcp(TcpServer::new(listener)),
+            )
+        }
+        Transport::Udp => {
+            let socket = UdpSocket::bind("127.0.0.1:0").unwrap();
+            (
+                socket.local_addr().unwrap(),
+                Driver::Udp(UdpServer::new(socket)),
+            )
+        }
+    };
+    let ends = spawn(move || {
+        match &mut driver {
+            Driver::Tcp(driver) => driver.set_start_timeout(Some(timeout)).unwrap(),
+            Driver::Udp(driver) => driver.set_start_timeout(Some(timeout)).unwrap(),
+        }
+        let mut buffer = vec![0; 4096];
+        (0..count)
+            .map(|_| {
+                let mut server = Server::new(server_config(transport), &mut buffer).unwrap();
+                let mut reports = Vec::new();
+                let on_report = |report: &Report| reports.push(*report);
+                let started = Instant::now();
+                let outcome = match &mut driver {
+                    Driver::Tcp(driver) => driver.run_one(&mut server, on_report),
+                    Driver::Udp(driver) => driver.run_one(&mut server, on_report),
+                };
+                let took = started.elapsed();
+                let end = outcome
+                    .map(|outcome| End { reports, outcome })
+                    .map_err(|error| error.kind());
+                (end, took)
+            })
+            .collect()
+    });
+    (address, ends)
+}
+
+#[test]
+fn a_server_without_a_client_gives_up_at_its_start_timeout() {
+    for transport in [Transport::Tcp, Transport::Udp] {
+        let (_, ends) = serve_with_start_timeout(transport, Duration::from_millis(200), 1);
+        let (end, took) = ends.get().pop().unwrap();
+        assert_eq!(end.err(), Some(ErrorKind::TimedOut), "{transport:?}");
+        assert!(
+            took >= Duration::from_millis(200),
+            "{transport:?}: {took:?}"
+        );
+        assert!(took < Duration::from_secs(1), "{transport:?}: {took:?}");
+    }
+}
+
+#[test]
+fn a_test_that_starts_within_the_start_timeout_runs() {
+    for transport in [Transport::Tcp, Transport::Udp] {
+        let (address, ends) = serve_with_start_timeout(transport, Duration::from_secs(2), 1);
+        let client = run(config(transport, false, Length::Bytes(51_200)), address);
+        let (end, _) = ends.get().pop().unwrap();
+        let served = end.unwrap();
+        assert_eq!(
+            (client.outcome, served.outcome),
+            (Ok(()), Ok(())),
+            "{transport:?}"
+        );
+        assert_eq!(served.last().bytes, client.last().bytes, "{transport:?}");
+    }
+}
+
+#[test]
+fn a_server_runs_the_next_test_after_a_start_timeout() {
+    for transport in [Transport::Tcp, Transport::Udp] {
+        let (address, ends) = serve_with_start_timeout(transport, Duration::from_millis(400), 2);
+        thread::sleep(Duration::from_millis(600));
+        let client = run(config(transport, false, Length::Bytes(51_200)), address);
+        let ends = ends.get();
+        assert_eq!(
+            ends[0].0.as_ref().err(),
+            Some(&ErrorKind::TimedOut),
+            "{transport:?}"
+        );
+        let served = ends[1].0.as_ref().unwrap();
+        assert_eq!(
+            (client.outcome, served.outcome),
+            (Ok(()), Ok(())),
+            "{transport:?}"
+        );
+        assert_eq!(served.last().bytes, client.last().bytes, "{transport:?}");
+    }
+}
+
+#[test]
+fn old_ends_do_not_hold_off_a_udp_start_timeout() {
+    let (address, ends) = serve_with_start_timeout(Transport::Udp, Duration::from_millis(300), 1);
+    let stray = UdpSocket::bind("127.0.0.1:0").unwrap();
+    let started = Instant::now();
+    while started.elapsed() < Duration::from_millis(600) {
+        stray.send_to(&old_end(), address).unwrap();
+        thread::sleep(Duration::from_millis(20));
+    }
+    let (end, took) = ends.get().pop().unwrap();
+    assert_eq!(end.err(), Some(ErrorKind::TimedOut));
+    assert!(took < Duration::from_millis(500), "{took:?}");
+}
+
+#[test]
+fn a_zero_start_timeout_is_invalid() {
+    let mut tcp = TcpServer::new(TcpListener::bind("127.0.0.1:0").unwrap());
+    let mut udp = UdpServer::new(UdpSocket::bind("127.0.0.1:0").unwrap());
+    let zero = Some(Duration::ZERO);
+    assert_eq!(
+        tcp.set_start_timeout(zero).unwrap_err().kind(),
+        ErrorKind::InvalidInput
+    );
+    assert_eq!(
+        udp.set_start_timeout(zero).unwrap_err().kind(),
+        ErrorKind::InvalidInput
+    );
 }
