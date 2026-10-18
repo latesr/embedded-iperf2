@@ -25,7 +25,7 @@ embedded-iperf2 = { path = "../../embedded-iperf2", features = ["embassy-net"] }
 esp-hal = { git = "https://github.com/esp-rs/esp-hal", rev = "44c7e7eb98bc4f09a8f6991c15c33383679a6888", features = ["esp32s31", "unstable", "defmt"] }
 esp-rtos = { git = "https://github.com/esp-rs/esp-hal", rev = "44c7e7eb98bc4f09a8f6991c15c33383679a6888", features = ["esp32s31", "embassy", "defmt"] }
 mcu-console = { path = "../../../embedded-devkit/mcu-console" }
-mcu-net = { path = "../../../embedded-devkit/mcu-net" }
+mcu-net = { path = "../../../embedded-devkit/mcu-net", features = ["iperf"] }
 static_cell = "2"
 
 [profile.release]
