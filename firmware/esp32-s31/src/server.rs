@@ -142,9 +142,7 @@ impl Commands for IperfServer {
             Err(Error::Accept(_)) => CommandResult::Err("the socket could not accept"),
             Err(Error::Send(_)) => CommandResult::Err("a datagram could not be sent"),
             Err(Error::SendTimedOut) => CommandResult::Err("the send buffer stayed full"),
-            Err(Error::Connect(_) | Error::Mismatch) => {
-                CommandResult::Err("the socket does not fit")
-            }
+            Err(Error::Connect(_) | Error::Mismatch) => CommandResult::Err("a driver mismatch"),
         }
     }
 }

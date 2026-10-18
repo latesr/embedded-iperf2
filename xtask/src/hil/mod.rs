@@ -49,6 +49,9 @@ const HOST_LIMIT: Duration = Duration::from_secs(60);
 /// The length of our `std` ends' work buffers. A reverse TCP test sends bursts of up to 128 KiB.
 const WORK: usize = 131_072;
 
+/// The default burst of an iperf 2.2.2 server in a reverse TCP test (P-16).
+const STOCK_BURST: u64 = 131_072;
+
 /// How much shorter than its length a test in time mode may last at its receiver, in hundredths of a second.
 const SHORT_BY: u64 = 25;
 
@@ -253,8 +256,8 @@ fn run_one(
             if case.transport == Transport::Udp {
                 line.push_str(" -u");
             }
-            let (probe, timeout) = (probe.to_owned(), case.timeout());
-            let server = thread::spawn(move || send(&probe, &line, timeout));
+            let (probe, limit) = (probe.to_owned(), case.timeout());
+            let server = thread::spawn(move || send_stopped_after(&probe, &line, limit));
             thread::sleep(LISTEN_WAIT);
             let ours = match side {
                 Host::Stock => stock_client(stock, board, case),
@@ -267,7 +270,7 @@ fn run_one(
         }
     };
     let theirs = reply::board(&printed, "result")?;
-    check(case, end, &theirs, &ours)?;
+    check(case, end, side, &theirs, &ours)?;
     Ok(format!(
         "{} bytes, {}.{:02} s at the board",
         theirs.bytes,
@@ -277,7 +280,7 @@ fn run_one(
 }
 
 /// Checks the board's report against this machine's.
-fn check(case: &Case, end: Board, board: &Counts, host: &Counts) -> Result<(), String> {
+fn check(case: &Case, end: Board, side: Host, board: &Counts, host: &Counts) -> Result<(), String> {
     let board_receives = (end == Board::Client) == case.reverse;
     let (receiver, sender) = if board_receives {
         (board, host)
@@ -291,11 +294,19 @@ fn check(case: &Case, end: Board, board: &Counts, host: &Counts) -> Result<(), S
             "the receiver lost {lost} and saw {out_of_order} out of order: board {board:?}, host {host:?}"
         ));
     }
+    // An iperf 2.2.2 server in a reverse TCP test in byte mode sends whole bursts past the count, up to one default
+    // burst more, and our client stops once the count has arrived.
+    let stock_sends_bursts = case.transport == Transport::Tcp
+        && case.reverse
+        && end == Board::Client
+        && matches!(side, Host::Stock);
     let counted = match case.length {
-        Length::Time { .. } => receiver.bytes == sender.bytes,
-        // An iperf 2.2.2 server in a reverse TCP test sends whole bursts past the count, and the receiver stops
-        // once the count has arrived.
-        Length::Bytes(count) => count <= receiver.bytes && receiver.bytes <= sender.bytes,
+        Length::Bytes(count) if stock_sends_bursts => {
+            count <= receiver.bytes
+                && receiver.bytes <= sender.bytes
+                && sender.bytes <= count.saturating_add(STOCK_BURST)
+        }
+        _ => receiver.bytes == sender.bytes,
     };
     if !counted {
         return Err(format!(
@@ -555,9 +566,31 @@ fn free_port(transport: Transport) -> Result<u16, String> {
 
 /// Sends one console line and returns what `mcu-run` printed, body lines then `ok`. An `err` result fails.
 fn send(probe: &str, line: &str, timeout: Duration) -> Result<String, String> {
-    let output = Command::new("mcu-run")
-        .args(["console", "--probe", probe, "--send", line, "--timeout"])
-        .arg(timeout.as_secs().to_string())
+    run_mcu_run(
+        line,
+        Command::new("mcu-run")
+            .args(["console", "--probe", probe, "--send", line, "--timeout"])
+            .arg(timeout.as_secs().to_string()),
+    )
+}
+
+/// Sends the line of a command that runs until stopped, and stops it with Ctrl-C after `limit`, so the board never
+/// runs it past this machine's side of the test. `mcu-run` sends a second Ctrl-C at twice `limit`.
+fn send_stopped_after(probe: &str, line: &str, limit: Duration) -> Result<String, String> {
+    let timeout = limit.saturating_mul(2).saturating_add(SLACK);
+    run_mcu_run(
+        line,
+        Command::new("mcu-run")
+            .args(["console", "--probe", probe, "--send", line, "--timeout"])
+            .arg(timeout.as_secs().to_string())
+            .arg("--interrupt-after")
+            .arg(limit.as_secs().to_string()),
+    )
+}
+
+/// Runs `mcu-run` for `line` and returns what it printed, or why it failed.
+fn run_mcu_run(line: &str, command: &mut Command) -> Result<String, String> {
+    let output = command
         .output()
         .map_err(|error| format!("could not start mcu-run: {error}"))?;
     let text = String::from_utf8_lossy(&output.stdout).into_owned();
