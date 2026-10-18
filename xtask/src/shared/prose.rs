@@ -98,7 +98,7 @@ const WARNED: &[(&str, &[&str])] = &[
     ("far reference", &["the former", "the latter", "one whose"]),
     ("containment", &["carries", "carry", "carried"]),
     ("filler", &["in order to"]),
-    ("hedging", &["actually"]),
+    ("hedging", &["actually", "obvious"]),
 ];
 
 /// The words that tie a sentence to the day it was written. A commit message describes its own change, so only
@@ -1031,7 +1031,7 @@ mod tests {
 
     #[test]
     fn each_warned_group_is_reported_with_its_line() {
-        let markdown = "It fails, which is rare.\n\nThe frame carries a length.\n\nWe did it in order to test. It is actually fine.\n\nThe latter wins.\n\nThe carryover and `x, which is y` stay.\n";
+        let markdown = "It fails, which is rare.\n\nThe frame carries a length.\n\nWe did it in order to test. It is actually fine.\n\nThe latter wins.\n\nThe carryover and `x, which is y` stay.\n\nThe obvious answer fails.\n";
         assert_eq!(
             warn(markdown, &every),
             vec![
@@ -1040,6 +1040,7 @@ mod tests {
                 found(5, "\"in order to\" (filler)"),
                 found(5, "\"actually\" (hedging)"),
                 found(7, "\"the latter\" (far reference)"),
+                found(11, "\"obvious\" (hedging)"),
             ]
         );
     }

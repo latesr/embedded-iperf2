@@ -162,8 +162,9 @@ pub fn feature_runs(full: bool) -> Vec<(&'static str, Vec<&'static str>)> {
     }
 }
 
-/// The root workspace's crates that a change reaches, by package name: each crate whose folder holds a changed
-/// path, and each crate that depends on one of them, through any kind of dependency and with every feature on.
+/// The root workspace's crates that a change reaches, by package name. They are each crate whose folder holds a
+/// changed path, and each crate that depends on one of them, through any kind of dependency and with every feature
+/// on.
 /// `None` means every crate, because the tree has no changes or a change reaches every group.
 pub fn reached_packages(root: &Path, changed: &[PathBuf]) -> Result<Option<Vec<String>>, String> {
     if changed.is_empty() || changed.iter().any(|path| reaches_every_group(path)) {

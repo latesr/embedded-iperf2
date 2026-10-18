@@ -241,7 +241,7 @@ mod tests {
     }
 
     /// The index git reports is the inherited one only when it lies under the repo. A relative index resolves
-    /// against the current directory, which is not the scratch repo.
+    /// against the current directory, and the current directory is not the scratch repo.
     #[test]
     fn a_scratch_repo_keeps_only_an_index_of_its_own() {
         let repo = TempRepo::new("shared-git-index");

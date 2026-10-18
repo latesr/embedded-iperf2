@@ -43,7 +43,7 @@ Every program in the repo is Rust. That covers the crates, the test tools, the f
 - Implement what the task asks for. Do not add an abstraction, configuration option or extension point that the task did not ask for.
 - A test asserts a specific value, never only that the code ran.
 - If a change adds two hundred lines and fifty would work, rewrite it before committing.
-- A boundary is the exception. Bytes from outside the program, such as the network or flash, are checked defensively. That is correctness, not over-engineering.
+- A boundary is the exception. Bytes from outside the program, such as the network or flash, are checked defensively. Such a check is correctness, not over-engineering.
 
 ### Every changed line traces to the task
 
@@ -348,7 +348,7 @@ When someone says "cut the commentary", remove commentary from the whole draft, 
 - If a sentence needs a semicolon, a dash or more than one "which", split it.
 - At most one bracket per sentence, for a date, an ID or a link. A second fact gets its own sentence.
 - Use the ordinary word. Write "uses", not "rests on". Write "checked", not "established". Write "fixes", not "addresses".
-- Write "has" or "holds" for what a record, message, event or struct contains. Keep "carries" for something that moves: a port carries signals, a count carries across a reconnect.
+- Write "has" or "holds" for what a record, message, event or struct contains. Keep "carries" for something that moves: "a port carries signals", "a count carries across a reconnect".
 - Do not use an idiom or a phrasal verb where a plain word exists. Write "continue", not "carry on". Write a new sentence, not "on the other hand".
 - Introduce an abbreviation in full on first use, with the short form in brackets: Architectural Decision Record (ADR). Abbreviations every engineer knows, such as API, do not need this.
 - Negate the verb, not the noun. Write "does not need" and "doesn't do I/O", not "needs no" and "does no I/O".
