@@ -5,9 +5,11 @@ use crate::wire::ServerReport;
 /// The bytes of one interval, or of the whole test.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Report {
-    /// The start of the interval, in microseconds from the start of the test.
+    /// The start of the interval, in microseconds from the start of the test. The test starts at the first bytes
+    /// this end sent or received (P-25).
     pub start_us: u64,
-    /// The end of the interval, in microseconds from the start of the test.
+    /// The end of the interval, in microseconds from the start of the test. A final report ends where P-25 states,
+    /// which can be later than the test length the client asked for.
     pub end_us: u64,
     /// The bytes this end sent or received in the interval.
     pub bytes: u64,

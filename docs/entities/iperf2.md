@@ -36,3 +36,8 @@ Observed by the interoperability tests in [`interop.rs`](../../embedded-iperf2/t
 
 - A UDP sender counts the end-of-test datagram in the bytes of its own report, as the receiver counts it. A stock client that sends 51200 bytes in datagrams of 512 bytes reports 51712 bytes, and our server's count equals it. See `stock_client_against_our_server`.
 - With `-y C`, a TCP report line has 9 fields, and the eighth holds the bytes. A UDP report line has 14 fields. It adds the jitter, the lost datagrams, the total, the percent lost and the out-of-order datagrams.
+
+Read in the source at `74d4b553`:
+
+- A client in a reverse TCP test reads until the server closes the connection, or until `-t` plus 2 s has passed ([`src/Server.cpp:184`](https://sourceforge.net/p/iperf2/code/ci/74d4b55321b9e7827c6567f3e48ae024ba3417c8/tree/src/Server.cpp#l184) and [`src/Server.cpp:1148`](https://sourceforge.net/p/iperf2/code/ci/74d4b55321b9e7827c6567f3e48ae024ba3417c8/tree/src/Server.cpp#l1148)). Its duration runs from its first read to that point.
+- The server stops writing at `-t` and then closes. The bytes still in its send buffer cross the link before the close does. On a slow link, a reverse test therefore reports a duration longer than `-t`, while its rate stays the rate the link delivered.

@@ -222,6 +222,8 @@ Every field is big-endian. Each offset counts from the start of the message. [Th
 
 **P-20** At the end of a test, the client and the server each report the bytes and the duration. A UDP sender's bytes include its first end-of-test datagram, as a stock sender's do. A UDP receiver adds the lost, out-of-order and datagram counts and the jitter. A UDP client adds the server report when one arrived.
 
+**P-25** A test's duration runs from the first bytes that this end sent or received. A sender's duration ends when its socket takes the last bytes, or at the receiver's close. A TCP receiver's ends at the close, or when it stops waiting for one. A UDP receiver's ends at the end-of-test datagram, or at its last datagram when the end does not arrive.
+
 ## Drivers
 
 **D-1** The core builds without any feature, for every target in the CI targets table, and does not allocate memory.
