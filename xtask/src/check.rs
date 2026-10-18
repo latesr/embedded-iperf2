@@ -15,6 +15,7 @@ const BOARD_FEATURES: &[&str] = &["embassy-net"];
 /// Runs each check in turn and stops at the first failure. With `full`, the lints and tests cover every crate,
 /// whatever changed.
 pub fn run(root: &Path, full: bool) -> Result<(), String> {
+    shared::sweep::daily(root, &[]);
     let targets = toolchain_targets(root)?;
     let msrv = workspace_msrv(root)?;
     let changed = if full {
