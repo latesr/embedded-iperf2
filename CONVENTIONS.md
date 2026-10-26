@@ -71,6 +71,8 @@ A comment is needed when it does one of these:
 
 Delete a comment that restates the next line, paraphrases the signature, names the task or diff that added it, or divides a file into sections without a reason.
 
+A comment states the rule the code keeps. A fact about one chip, board or run goes in the commit or the pull request. A comment on a configuration setting is one short line.
+
 A code comment does not name an issue. `// see #12` does not explain anything once the issue closes. Name the invariant and, where one exists, the ADR.
 
 ## Requirements
@@ -326,7 +328,8 @@ The most common fault is a fact followed by a sentence that comments on it. Cut 
 
 - Do not write about the document itself, its purpose or how to read it.
 - Do not assess your own writing. Do not call anything honest, clear, "worth noting" or alarming.
-- Do not add a verdict to a fact that already implies it.
+- Do not add a verdict or a conclusion that the reader draws from the fact before it.
+- Do not explain what the reader's field already knows.
 - Do not use hedging adverbs such as `obviously`, `arguably`, `genuinely`, `plainly` or `frankly`.
 - Do not add a "which" clause that restates the clause before it, or that adds a fact the sentence does not need.
 - Do not write "worth noting", "note that", "the point is" or "what matters is".
@@ -347,16 +350,27 @@ When someone says "cut the commentary", remove commentary from the whole draft, 
 - Name the thing instead of writing "one", "it" or "that" when its noun is more than a clause back.
 - If a sentence needs a semicolon, a dash or more than one "which", split it.
 - At most one bracket per sentence, for a date, an ID or a link. A second fact gets its own sentence.
-- Use the ordinary word. Write "uses", not "rests on". Write "checked", not "established". Write "fixes", not "addresses".
+- Use the ordinary word. Write "uses", not "rests on". Write "checked", not "established". Write "fixes", not "addresses". Write "adds", not "gains".
 - Write "has" or "holds" for what a record, message, event or struct contains. Keep "carries" for something that moves: "a port carries signals", "a count carries across a reconnect".
 - Do not use an idiom or a phrasal verb where a plain word exists. Write "continue", not "carry on". Write a new sentence, not "on the other hand".
-- Introduce an abbreviation in full on first use, with the short form in brackets: Architectural Decision Record (ADR). Abbreviations every engineer knows, such as API, do not need this.
+- Introduce an abbreviation in full on first use, with the short form in brackets: Architectural Decision Record (ADR). Abbreviations that every engineer working on the repo knows do not need this, such as DMA in a HAL, or PSS in a TLS library.
 - Negate the verb, not the noun. Write "does not need" and "doesn't do I/O", not "needs no" and "does no I/O".
 - A table cell holds one fact or a short list. Anything longer goes in prose under a heading, and the cell links to it.
 - Say what an ID refers to on first mention: "PR #6192, the retry logic".
 - Write dates as YYYY-MM-DD.
 - A page does not describe its own edit history. Git holds it. An ADR's History section is the one exception.
 - Never hard-wrap markdown. Put one line per paragraph, bullet or table row, and soft wrap in the editor.
+
+### Commit messages
+
+A commit message says what changes for a user of the code, and why. The diff shows how, and the pull request shows how it was tested.
+
+- The body states the problem, then the change, then any consequence a user must know. "Before this change" or "Previously" marks the old behaviour.
+- A fix is named as a fix. A fix and preparation for later work go in separate paragraphs.
+- Leave out what the diff shows: where code moved, which functions changed and how the mechanism works. Name a function only when the reader needs it to follow the problem.
+- Leave out the tests. A new kind of test, such as a stress test, gets one sentence.
+- Leave out background: a precedent the change does not follow, an aside about another tool, commit hashes, version strings, and our boards and machine.
+- A small change has a subject and no body. Most bodies are one to three short paragraphs, wrapped at 72 columns.
 
 ### The prose check
 

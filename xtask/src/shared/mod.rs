@@ -6,11 +6,13 @@ mod adrs;
 pub mod checks;
 pub(crate) mod files;
 pub(crate) mod hooks;
+pub mod host;
 mod ids;
 pub mod links;
 mod mutants;
 pub mod prose;
 mod renumber;
+pub mod size;
 pub mod sweep;
 pub mod toolchain;
 
@@ -91,15 +93,16 @@ pub fn require_tool(root: &Path, subcommand: &str, install: &str) -> Result<(), 
 
 /// Runs git in `root` and returns its output. Fails with git's error output when it exits with a failure.
 ///
-/// Git gives a hook an index in `GIT_INDEX_FILE`, and a commit with a pathspec makes it a temporary one. The
-/// hook's own repo must use it, and a scratch repo the tests create must not, so the variable reaches git only
-/// when the index lies under `root`.
+/// Git gives a hook `GIT_DIR`, `GIT_WORK_TREE` and an index in `GIT_INDEX_FILE`, and a commit with a pathspec
+/// makes the index a temporary one. They name the hook's repo, and `root` can be another, such as a scratch
+/// repo a test creates. So git finds the repo from `root`, and the index reaches git only when it lies in the
+/// git folder of the repo at `root`.
 pub fn git(root: &Path, args: &[&str]) -> Result<Vec<u8>, String> {
     git_with_index(root, args, std::env::var_os("GIT_INDEX_FILE").as_deref())
 }
 
-/// Runs git in `root` with `inherited` as its `GIT_INDEX_FILE` when that index lies under `root`, and with no
-/// `GIT_INDEX_FILE` otherwise.
+/// Runs git in `root` without the variables that name a repo, and with `inherited` as its `GIT_INDEX_FILE`
+/// when that index lies in the git folder of the repo at `root`.
 fn git_with_index(
     root: &Path,
     args: &[&str],
@@ -107,14 +110,18 @@ fn git_with_index(
 ) -> Result<Vec<u8>, String> {
     let mut command = std::process::Command::new("git");
     command.current_dir(root).args(args);
+    clear_repo_env(&mut command)?;
     let cwd = std::env::current_dir().map_err(|error| format!("no current directory: {error}"))?;
-    match inherited {
-        Some(index) if index_belongs_to(root, Path::new(index), &cwd) => {
-            command.env("GIT_INDEX_FILE", index);
-        }
-        _ => {
-            command.env_remove("GIT_INDEX_FILE");
-        }
+    // A folder that is not yet a repo has no git folder, so no inherited index is its own.
+    if let Some(index) = inherited
+        && let Ok(git_dir) = git_with_index(root, &["rev-parse", "--absolute-git-dir"], None)
+        && index_belongs_to(
+            Path::new(String::from_utf8_lossy(&git_dir).trim()),
+            Path::new(index),
+            &cwd,
+        )
+    {
+        command.env("GIT_INDEX_FILE", index);
     }
     let output = command
         .output()
@@ -130,16 +137,42 @@ fn git_with_index(
     }
 }
 
-/// Whether `index`, resolved against `cwd` when relative, is a file under `root`. The index's folder is
+/// Removes from `command` every variable that names a repo, as `git rev-parse --local-env-vars` lists them.
+/// Git clears the same list when it runs in a submodule.
+fn clear_repo_env(command: &mut std::process::Command) -> Result<(), String> {
+    static NAMES: std::sync::OnceLock<Result<Vec<String>, String>> = std::sync::OnceLock::new();
+    let names = NAMES.get_or_init(|| {
+        let output = std::process::Command::new("git")
+            .args(["rev-parse", "--local-env-vars"])
+            .output()
+            .map_err(|error| format!("could not run git: {error}"))?;
+        if !output.status.success() {
+            return Err(format!(
+                "git rev-parse --local-env-vars failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            ));
+        }
+        Ok(String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .map(str::to_owned)
+            .collect())
+    });
+    for name in names.as_ref().map_err(Clone::clone)? {
+        command.env_remove(name);
+    }
+    Ok(())
+}
+
+/// Whether `index`, resolved against `cwd` when relative, is a file under `git_dir`. The index's folder is
 /// canonicalised rather than the index, because a temporary index may be gone by the time this runs.
-fn index_belongs_to(root: &Path, index: &Path, cwd: &Path) -> bool {
+fn index_belongs_to(git_dir: &Path, index: &Path, cwd: &Path) -> bool {
     let index = cwd.join(index);
-    let (Ok(root), Some(folder)) = (root.canonicalize(), index.parent()) else {
+    let (Ok(git_dir), Some(folder)) = (git_dir.canonicalize(), index.parent()) else {
         return false;
     };
     folder
         .canonicalize()
-        .is_ok_and(|folder| folder.starts_with(root))
+        .is_ok_and(|folder| folder.starts_with(git_dir))
 }
 
 #[cfg(test)]
@@ -226,13 +259,14 @@ mod tests {
     }
 
     #[test]
-    fn an_index_belongs_to_the_repo_whose_folder_holds_it() {
+    fn an_index_belongs_to_the_repo_whose_git_folder_holds_it() {
         let repo = TempRepo::new("shared-index");
         let other = TempRepo::new("shared-index-other");
         std::fs::create_dir(repo.0.join(".git")).unwrap();
+        std::fs::create_dir(other.0.join(".git")).unwrap();
         let index = repo.0.join(".git/next-index-1.lock");
-        assert!(index_belongs_to(&repo.0, &index, &other.0));
-        assert!(!index_belongs_to(&other.0, &index, &repo.0));
+        assert!(index_belongs_to(&repo.0.join(".git"), &index, &other.0));
+        assert!(!index_belongs_to(&other.0.join(".git"), &index, &repo.0));
         assert!(!index_belongs_to(
             Path::new("/nonexistent"),
             &index,
@@ -265,6 +299,96 @@ mod tests {
         assert_eq!(reported(None), ".git/index");
     }
 
+    /// A hook runs with `GIT_DIR` and `GIT_WORK_TREE` naming the hook's repo. In a worktree they are absolute,
+    /// so without the clear a scratch repo's git would write to the hook's repo.
+    #[test]
+    fn a_scratch_repo_ignores_variables_that_name_another_repo() {
+        let scratch = TempRepo::new("shared-env-scratch");
+        let other = TempRepo::new("shared-env-other");
+        git(&scratch.0, &["init", "--quiet"]).unwrap();
+        git(&other.0, &["init", "--quiet"]).unwrap();
+        let mut command = std::process::Command::new("git");
+        command
+            .current_dir(&scratch.0)
+            .args(["config", "user.name", "scratch"])
+            .env("GIT_DIR", other.0.join(".git"))
+            .env("GIT_WORK_TREE", &other.0);
+        clear_repo_env(&mut command).unwrap();
+        assert!(command.status().unwrap().success());
+        let name = |repo: &TempRepo| {
+            let output = git(
+                &repo.0,
+                &["config", "--local", "--default", "", "user.name"],
+            )
+            .unwrap();
+            String::from_utf8(output).unwrap().trim().to_owned()
+        };
+        assert_eq!(name(&scratch), "scratch");
+        assert_eq!(name(&other), "");
+    }
+
+    /// A hook's index is inherited by every git the tests run, including the one that makes a scratch repo.
+    #[test]
+    fn a_repo_can_be_made_while_an_index_is_inherited() {
+        let folder = TempRepo::new("shared-env-init");
+        let inherited = folder.0.with_file_name("elsewhere/.git/index");
+        assert!(
+            git_with_index(&folder.0, &["init", "--quiet"], Some(inherited.as_os_str())).is_ok()
+        );
+        assert!(folder.0.join(".git/HEAD").is_file());
+    }
+
+    /// A worktree's index lies under the main repo's `.git/worktrees`, outside the worktree's folder.
+    #[test]
+    fn a_worktree_keeps_the_index_in_its_git_folder() {
+        let repo = TempRepo::new("shared-worktree");
+        let worktree = repo
+            .0
+            .with_file_name(format!("xtask-shared-worktree-wt-{}", std::process::id()));
+        git(&repo.0, &["init", "--quiet"]).unwrap();
+        git(
+            &repo.0,
+            &[
+                "-c",
+                "user.name=t",
+                "-c",
+                "user.email=t@t",
+                "commit",
+                "--quiet",
+                "--allow-empty",
+                "-m",
+                "start",
+            ],
+        )
+        .unwrap();
+        git(
+            &repo.0,
+            &[
+                "worktree",
+                "add",
+                "--quiet",
+                "--detach",
+                worktree.to_str().unwrap(),
+            ],
+        )
+        .unwrap();
+        let own = repo
+            .0
+            .join(".git/worktrees")
+            .join(worktree.file_name().unwrap())
+            .join("index");
+        let output = git_with_index(
+            &worktree,
+            &["rev-parse", "--git-path", "index"],
+            Some(own.as_os_str()),
+        );
+        let _ = std::fs::remove_dir_all(&worktree);
+        assert_eq!(
+            String::from_utf8(output.unwrap()).unwrap().trim(),
+            own.to_str().unwrap()
+        );
+    }
+
     #[test]
     fn a_relative_index_is_resolved_against_the_current_directory() {
         let repo = TempRepo::new("shared-index-relative");
@@ -272,8 +396,8 @@ mod tests {
         std::fs::create_dir(repo.0.join(".git")).unwrap();
         std::fs::create_dir(other.0.join(".git")).unwrap();
         let index = Path::new(".git/index");
-        assert!(index_belongs_to(&repo.0, index, &repo.0));
-        assert!(!index_belongs_to(&repo.0, index, &other.0));
+        assert!(index_belongs_to(&repo.0.join(".git"), index, &repo.0));
+        assert!(!index_belongs_to(&repo.0.join(".git"), index, &other.0));
     }
 
     #[test]

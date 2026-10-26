@@ -12,8 +12,14 @@ repository.workspace = true
 clap = { version = "4", features = ["derive"] }
 # The `std` driver, one of `cargo xtask hil`'s host ends.
 embedded-iperf2 = { path = "../embedded-iperf2", features = ["std"] }
+if-addrs = "0.15"
+object = { version = "0.40", default-features = false, features = ["read_core", "elf", "std"] }
 pulldown-cmark = { version = "0.13", default-features = false }
 toml = "0.9"
+
+[dev-dependencies]
+# The size tests write a small ELF image to read back.
+object = { version = "0.40", default-features = false, features = ["read_core", "elf", "std", "write"] }
 
 [lints]
 workspace = true

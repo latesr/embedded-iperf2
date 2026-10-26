@@ -26,6 +26,9 @@ exclude_re = [
     # error. Only a fault such as running out of file descriptors makes accept fail on loopback with anything but
     # `WouldBlock`, and a test cannot cause one without `unsafe` resource limits.
     'replace match guard error.kind\(\) == ErrorKind::WouldBlock with true in accept_within',
+    # wifi_devices only runs networksetup on macOS or reads /sys/class/net elsewhere, and wifi_ports and
+    # wireless_devices, which read their output, are tested.
+    'xtask/src/shared/host\.rs:[0-9:]+ replace wifi_devices -> ',
 ]
 
 # The two interoperability tests run a stock iperf for about ten seconds, and would run once for each mutant. They

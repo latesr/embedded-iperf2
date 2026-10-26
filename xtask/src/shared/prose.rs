@@ -93,9 +93,11 @@ const WARNED: &[(&str, &[&str])] = &[
             "needs no",
             "does no",
             "keeps no",
+            "has no",
         ],
     ),
     ("far reference", &["the former", "the latter", "one whose"]),
+    ("unusual verb", &["gains", "gained", "and go"]),
     ("containment", &["carries", "carry", "carried"]),
     ("filler", &["in order to"]),
     ("hedging", &["actually", "obvious"]),
@@ -1041,6 +1043,19 @@ mod tests {
                 found(5, "\"actually\" (hedging)"),
                 found(7, "\"the latter\" (far reference)"),
                 found(11, "\"obvious\" (hedging)"),
+            ]
+        );
+    }
+
+    #[test]
+    fn an_unusual_verb_and_a_negated_noun_after_has_are_reported() {
+        let markdown = "The proxy gains a handle.\n\nThe methods are unused and go.\n\nThe clock has no time.\n";
+        assert_eq!(
+            warn(markdown, &every),
+            vec![
+                found(1, "\"gains\" (unusual verb)"),
+                found(3, "\"and go\" (unusual verb)"),
+                found(5, "\"has no\" (restating)"),
             ]
         );
     }
