@@ -6,6 +6,18 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+/// The rule files at the repo root that are copies from the devkit, as `CONVENTIONS.md`'s Where to look table
+/// names them.
+pub const RULE_FILES: [&str; 7] = [
+    "CONVENTIONS.md",
+    "CODE.md",
+    "TESTING.md",
+    "WRITING.md",
+    "DOCS.md",
+    "CHECKS.md",
+    "EMBEDDED.md",
+];
+
 /// Every file under `root` with the given extension, keyed by its path relative to `root`. Skips `target`,
 /// hidden directories and the `mutants.out` directories, which hold build output and copies of the sources.
 pub fn read_files(root: &Path, extension: &str) -> BTreeMap<PathBuf, String> {

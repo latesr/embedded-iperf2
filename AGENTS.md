@@ -1,4 +1,7 @@
 @CONVENTIONS.md
+@CODE.md
+@TESTING.md
+@EMBEDDED.md
 
 # embedded-iperf2
 

@@ -7,7 +7,7 @@
 //! `ADR-0001` are never read as IDs. An ID in a markdown code block is not a citation, so a commit message can
 //! list old IDs in one. A repo without `REQUIREMENTS.md` has nothing to check.
 //!
-//! The copies from the devkit, `CONVENTIONS.md` and `xtask/src/shared/`, are not read. Their example IDs cite no
+//! The copies from the devkit, the rule files and `xtask/src/shared/`, are not read. Their example IDs cite no
 //! repo's requirements, and a renumber must not edit a copy in place. The devkit holds the originals, so they must
 //! not cite a devkit requirement either: the check would not see the citation, and a sync would copy it to every
 //! repo.
@@ -15,7 +15,7 @@
 //! A renumber rewrites an ID in a heading, and not the anchors that link to the heading. The links check then
 //! reports each broken anchor.
 
-use super::files::read_files;
+use super::files::{RULE_FILES, read_files};
 use super::prose::{trailing_comment, whole_line_comment};
 use pulldown_cmark::{Event, Parser, Tag};
 use std::collections::{BTreeMap, BTreeSet};
@@ -82,7 +82,7 @@ pub(super) fn citations_by_file(
 
 /// Whether the file at `path`, relative to the repo root, is a copy from the devkit.
 fn is_synced(path: &Path) -> bool {
-    path == Path::new("CONVENTIONS.md") || path.starts_with("xtask/src/shared")
+    RULE_FILES.iter().any(|file| path == Path::new(file)) || path.starts_with("xtask/src/shared")
 }
 
 /// Each bold ID in `requirements`, in the order the file defines them, with any repeat.
@@ -282,6 +282,7 @@ mod tests {
             "const A: u8 = 1;\n// Follows C-2 and C-8.\nconst NOT_A_CITATION: &str = \"C-7\";\n",
         );
         repo.write("CONVENTIONS.md", "An ID such as C-6.\n");
+        repo.write("WRITING.md", "An ID such as C-6.\n");
         repo.write("xtask/src/shared/ids.rs", "// Such as C-6.\n");
         assert_eq!(
             check(&repo.0),

@@ -1,6 +1,6 @@
 // A copy from embedded-devkit/xtask/src/shared. Edit it there, then run `cargo xtask sync` in the devkit.
 
-//! Checks markdown, rustdoc, code comments and commit messages for the phrases that CONVENTIONS.md bans.
+//! Checks markdown, rustdoc, code comments and commit messages for the phrases that WRITING.md bans.
 
 use pulldown_cmark::{Event, Options, Parser, Tag, TagEnd};
 use std::fs;
@@ -101,6 +101,9 @@ const WARNED: &[(&str, &[&str])] = &[
     ("containment", &["carries", "carry", "carried"]),
     ("filler", &["in order to"]),
     ("hedging", &["actually", "obvious"]),
+    ("citation", &[", see"]),
+    ("diff reference", &["this code", "this port"]),
+    ("unapproved word", &["whose", "unless", "itself"]),
 ];
 
 /// The words that tie a sentence to the day it was written. A commit message describes its own change, so only
@@ -402,7 +405,7 @@ fn warn_blocks(
     lines
 }
 
-/// The most words a sentence has before it warns. `CONVENTIONS.md` keeps most sentences under 25.
+/// The most words a sentence has before it warns. ASD-STE100 keeps a sentence under 25 words.
 const LONG_SENTENCE: usize = 35;
 
 /// The second words that make a sentence opening with "this" or "that" comment on the sentence before it.
@@ -1033,7 +1036,7 @@ mod tests {
 
     #[test]
     fn each_warned_group_is_reported_with_its_line() {
-        let markdown = "It fails, which is rare.\n\nThe frame carries a length.\n\nWe did it in order to test. It is actually fine.\n\nThe latter wins.\n\nThe carryover and `x, which is y` stay.\n\nThe obvious answer fails.\n";
+        let markdown = "It fails, which is rare.\n\nThe frame carries a length.\n\nWe did it in order to test. It is actually fine.\n\nThe latter wins.\n\nThe carryover and `x, which is y` stay.\n\nThe obvious answer fails.\n\nThe pins hold, see <https://example.com/a>.\n\nThis code wraps.\n\nThe core whose turn it is waits.\n\nThe chip resets unless the dog is fed. Core 1 sleeps itself.\n";
         assert_eq!(
             warn(markdown, &every),
             vec![
@@ -1043,6 +1046,11 @@ mod tests {
                 found(5, "\"actually\" (hedging)"),
                 found(7, "\"the latter\" (far reference)"),
                 found(11, "\"obvious\" (hedging)"),
+                found(13, "\", see\" (citation)"),
+                found(15, "\"this code\" (diff reference)"),
+                found(17, "\"whose\" (unapproved word)"),
+                found(19, "\"unless\" (unapproved word)"),
+                found(19, "\"itself\" (unapproved word)"),
             ]
         );
     }

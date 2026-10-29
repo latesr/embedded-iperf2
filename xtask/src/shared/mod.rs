@@ -37,6 +37,9 @@ pub enum Command {
         /// Warn on the whole tree.
         #[arg(long)]
         warn_all: bool,
+        /// The tree to check instead of this repo, such as a worktree of an upstream project.
+        #[arg(long)]
+        root: Option<PathBuf>,
     },
     /// Write the git hooks that run the checks.
     InstallHooks,
@@ -68,7 +71,15 @@ pub fn run(root: &Path, command: Command) -> Result<(), String> {
                 Err(problems.join("\n"))
             }
         }
-        Command::Prose { message, warn_all } => prose::run_with(root, message.as_deref(), warn_all),
+        Command::Prose {
+            message,
+            warn_all,
+            root: tree,
+        } => prose::run_with(
+            tree.as_deref().unwrap_or(root),
+            message.as_deref(),
+            warn_all,
+        ),
         Command::InstallHooks => hooks::install(root),
         Command::Mutants { staged, base } => mutants::run(root, staged, &base),
         Command::Renumber => renumber::run(root),
@@ -206,6 +217,7 @@ mod tests {
             Command::Prose {
                 message: Some(PathBuf::from("MSG")),
                 warn_all: false,
+                root: None,
             }
         );
         assert_eq!(
@@ -213,6 +225,15 @@ mod tests {
             Command::Prose {
                 message: None,
                 warn_all: true,
+                root: None,
+            }
+        );
+        assert_eq!(
+            parse(&["prose", "--root", "DIR"]).unwrap(),
+            Command::Prose {
+                message: None,
+                warn_all: false,
+                root: Some(PathBuf::from("DIR")),
             }
         );
         assert_eq!(
@@ -233,11 +254,22 @@ mod tests {
         let prose = |warn_all| Command::Prose {
             message: None,
             warn_all,
+            root: None,
         };
         repo.write("README.md", "[gone](missing.md)\n");
         let error = run(&repo.0, links()).unwrap_err();
         assert!(error.contains("missing.md"), "{error}");
         assert_eq!(run(&repo.0, prose(false)), Ok(()));
+
+        let other = TempRepo::new("shared-run-other");
+        other.write("README.md", "A robust page.\n");
+        let elsewhere = Command::Prose {
+            message: None,
+            warn_all: false,
+            root: Some(other.0.clone()),
+        };
+        let error = run(&repo.0, elsewhere).unwrap_err();
+        assert!(error.contains("robust"), "{error}");
 
         repo.write("README.md", "A robust page.\n");
         assert_eq!(run(&repo.0, links()), Ok(()));
