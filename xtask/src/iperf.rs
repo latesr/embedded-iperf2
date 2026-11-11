@@ -1,5 +1,5 @@
-//! The stock iperf that the recorder, `cargo xtask hil` and the interoperability tests run, and `cargo xtask
-//! install-iperf`, which builds it.
+//! Builds the stock iperf at the pinned version, checks its version, and runs it as a server. The recorder,
+//! `cargo xtask hil`, and the interoperability tests run that binary. `cargo xtask install-iperf` builds it.
 
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Output, Stdio};
@@ -8,12 +8,12 @@ use std::time::Duration;
 /// The version the samples come from. `MCU_IPERF2` must name a binary that reports it.
 pub const VERSION: &str = "2.2.2";
 const REPOSITORY: &str = "https://git.code.sf.net/p/iperf2/code";
-/// The tip of the branch `2-2-2`. The repository has no tag for 2.2.2. The branch's last change to the source is
-/// the 2.2.2 release notes, and the two commits after it change only the Android app.
+/// The tip of the branch `2-2-2`. The repository does not have a tag for 2.2.2. The last change to the source on
+/// the branch is the 2.2.2 release notes. The two commits after it change only the Android app.
 const PIN: &str = "74d4b55321b9e7827c6567f3e48ae024ba3417c8";
 
-/// Builds iperf from the repository at the pin into `~/.local/opt/iperf/<version>/iperf`, unless a binary of the
-/// pinned version is already there. Prints the path for `MCU_IPERF2`.
+/// Builds iperf from the repository at the pin into `~/.local/opt/iperf/<version>/iperf`. Skips the build when a
+/// binary of the pinned version is already there. Prints the path for `MCU_IPERF2`.
 pub fn install() -> Result<(), String> {
     let home = std::env::var("HOME").map_err(|_| "HOME is not set".to_owned())?;
     let folder = PathBuf::from(home).join(".local/opt/iperf").join(VERSION);
@@ -49,7 +49,7 @@ pub fn install() -> Result<(), String> {
 
     std::fs::copy(source.join("src/iperf"), &binary)
         .map_err(|error| format!("{}: {error}", binary.display()))?;
-    // A build of the wrong version keeps its source tree, to inspect.
+    // A build of the wrong version keeps its source tree for inspection.
     check_version(&binary)?;
     std::fs::remove_dir_all(&source).map_err(|error| format!("{}: {error}", source.display()))?;
     println!("==> installed {}", binary.display());
@@ -57,8 +57,8 @@ pub fn install() -> Result<(), String> {
     Ok(())
 }
 
-/// Fails unless the first line that `binary -v` prints names the pinned version. iperf 2 prints it on standard
-/// error. Returns that line.
+/// Returns the first line that `binary -v` prints. Fails when that line does not name the pinned version. iperf 2
+/// prints the line on standard error.
 pub fn check_version(binary: &Path) -> Result<String, String> {
     let output = Command::new(binary)
         .arg("-v")
@@ -106,7 +106,7 @@ impl StockServer {
         Ok(Self(Some(child)))
     }
 
-    /// Stops the server with SIGINT, so it flushes its report, and returns what it printed.
+    /// Stops the server with SIGINT, and returns what the server printed. SIGINT lets the server flush its report.
     pub fn interrupt(mut self) -> Result<Output, String> {
         let child = self.0.take().ok_or("the server is gone")?;
         let status = Command::new("kill")

@@ -1,4 +1,4 @@
-# This workflow has not run until the repo has a remote. Until then, run `cargo xtask check --full` by hand.
+# This workflow does not run until the repo has a remote. Until then, run `cargo xtask check --full` by hand.
 name: CI
 
 on:
@@ -26,8 +26,8 @@ jobs:
         run: rustup toolchain install 1.91 --profile minimal
       - uses: taiki-e/install-action@cargo-hack
       - uses: Swatinem/rust-cache@v2
-      # The interoperability tests run a stock iperf 2.2.2, which no package manager has. The key names the pin, so
-      # a new pin builds it again.
+      # The interoperability tests run a stock iperf 2.2.2, and package managers do not have that version. The cache
+      # key names the pin, so a new pin builds the binary again.
       - uses: actions/cache@v4
         with:
           path: ~/.local/opt/iperf/2.2.2
@@ -38,8 +38,8 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-mutants
-      # A new branch has no commit before the push, and GitHub then sends all zeros. A force push can send a commit
-      # that is gone. The merge base with main covers both.
+      # For a new branch, GitHub sends all zeros as the commit before the push. A force push can send a commit that
+      # is gone. The merge base with main covers both cases.
       - name: Mutation test the lines this push or pull request changes
         run: |
           base="${{ github.event.pull_request.base.sha || github.event.before }}"

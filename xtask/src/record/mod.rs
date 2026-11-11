@@ -1,5 +1,6 @@
-//! `cargo xtask record`: runs a stock iperf 2.2.2 client and server on loopback, through a relay that writes the
-//! bytes of each direction to a sample file.
+//! `cargo xtask record [<case>...]`: runs a stock iperf 2.2.2 client and server on loopback, through a relay that
+//! writes the bytes of each direction to a sample file. It saves what the client and the server printed beside the
+//! sample file, and writes a `README.md` that lists the cases.
 
 pub mod sample;
 

@@ -1,8 +1,8 @@
 # The embedded-iperf2 firmware for the ESP32-S31-Function-CoreBoard-1, on the devkit's board crate. Its console has
-# `mcu-net`'s `net` commands, whose `net iperf` runs our client, and `iperf -s`, which runs our server.
-# `cargo xtask hil` builds, flashes and drives it against iperf 2.2.2 and our `std` driver on the host (T-7). It
-# builds only beside clones of embedded-devkit and esp-hal, as the devkit's esp workspace does, and `cargo xtask
-# check` does not build it.
+# `mcu-net`'s `net` commands and `iperf -s`. `net iperf` runs the crate's client, and `iperf -s` runs the crate's
+# server. `cargo xtask hil` builds, flashes, and drives the firmware against iperf 2.2.2 and the crate's `std`
+# driver on the host (T-7). The firmware builds only beside clones of embedded-devkit and esp-hal, as the devkit's
+# esp workspace does. `cargo xtask check` does not build it.
 [workspace]
 resolver = "3"
 
@@ -35,8 +35,8 @@ debug = true
 [profile.dev.package.esp-hal]
 opt-level = 3
 
-# The devkit's esp-hal clone, as the devkit's esp workspace patches it. Every crate from the esp-hal repository
-# comes from the one clone, because two copies of esp-rom-sys cannot link.
+# Two copies of esp-rom-sys cannot link, so every crate from the esp-hal repository comes from the devkit's one
+# esp-hal clone. The devkit's esp workspace has the same patch.
 [patch."https://github.com/esp-rs/esp-hal"]
 esp-alloc = { path = "../../../esp-hal/esp-alloc" }
 esp-bootloader-esp-idf = { path = "../../../esp-hal/esp-bootloader-esp-idf" }
@@ -52,7 +52,7 @@ esp-rom-sys = { path = "../../../esp-hal/esp-rom-sys" }
 esp-rtos = { path = "../../../esp-hal/esp-rtos" }
 esp-sync = { path = "../../../esp-hal/esp-sync" }
 
-# mcu-net asks for embedded-iperf2 from crates.io, which does not have it yet. The patch also makes `net iperf` run
-# the code under test.
+# mcu-net asks for embedded-iperf2 from crates.io, but the crate is not on crates.io yet. The patch also makes
+# `net iperf` run the code under test.
 [patch.crates-io]
 embedded-iperf2 = { path = "../../embedded-iperf2" }

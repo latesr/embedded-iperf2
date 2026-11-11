@@ -1,4 +1,4 @@
-//! Repository tasks. `cargo xtask <command>` runs one.
+//! Runs the repository tasks. `cargo xtask <command>` runs one, and `cargo xtask help` lists them.
 
 mod check;
 mod fuzz;
@@ -34,16 +34,16 @@ enum Command {
     InstallIperf,
     /// Run the parser fuzz target on nightly, seeded with the samples.
     Fuzz {
-        /// How long to fuzz for.
+        /// The number of seconds that the fuzzer runs.
         #[arg(long, default_value_t = 60)]
         seconds: u64,
     },
-    /// Flash the S31 firmware and run our client and server on the board against iperf 2.2.2 and our std driver.
+    /// Flash the S31 firmware, then test the board's client and server against iperf 2.2.2 and the crate's std driver.
     Hil {
         /// The `mcu-run` selector of the board.
         #[arg(long)]
         probe: String,
-        /// Run only the cases whose name holds this text, such as "udp -t 5".
+        /// Run only the cases with a name that holds this text, such as "udp -t 5".
         #[arg(long)]
         case: Option<String>,
     },
@@ -68,7 +68,7 @@ fn main() {
     }
 }
 
-/// The workspace root, which is the parent of the `xtask` crate.
+/// The workspace root. It is the parent folder of the `xtask` crate.
 fn repo_root() -> PathBuf {
     let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     manifest_dir

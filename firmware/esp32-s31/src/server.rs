@@ -1,8 +1,9 @@
 //! `iperf -s [-u] [-p <port>]`: one iperf 2 server test over embedded-iperf2's embassy-net driver.
 //!
-//! The end writes `result: <a>-<b> s <bytes> bytes <rate> Mbit/s`, the shape of `net iperf`'s `result:` line, so
-//! `cargo xtask hil` reads both with one parser. A UDP test adds `lost <n>/<n> ooo <n> jitter <t> ms`. Ctrl-C ends
-//! the wait for a test, and a test that has started ends at the server's duration limit at the latest.
+//! At the end of a test, the command writes `result: <a>-<b> s <bytes> bytes <rate> Mbit/s`. The line has the shape
+//! of `net iperf`'s `result:` line, so `cargo xtask hil` reads both with one parser. A UDP test adds
+//! `lost <n>/<n> ooo <n> jitter <t> ms`. Ctrl-C ends the wait for a test. A test that has started ends at the
+//! server's duration limit at the latest.
 
 use core::fmt::{self, Display, Formatter};
 use embassy_futures::select::{Either, select};
@@ -22,7 +23,7 @@ const PORT: u16 = 5001;
 const LIMIT_US: u64 = 60_000_000;
 
 /// The length of each socket buffer, receive and send. Internal RAM does not hold a second pair at `net iperf`'s
-/// 64 KiB beside the Ethernet rings. 48 KiB is many times what a direct cable at 100 Mbit/s has in flight.
+/// 64 KiB beside the Ethernet rings. 48 KiB is many times the data in flight on a direct cable at 100 Mbit/s.
 const SOCKET: usize = 49152;
 
 /// How many datagrams the UDP socket queues each way: 32 datagrams of 1470 bytes fill 46 KiB, as in `mcu-net`.
@@ -37,7 +38,7 @@ static HELP: [Help; 1] = [Help {
     secret: false,
 }];
 
-/// The socket buffers, the server's work buffer and the UDP stash of `iperf -s`.
+/// The socket buffers, the server's work buffer, and the UDP stash of `iperf -s`.
 pub struct Buffers {
     rx: [u8; SOCKET],
     tx: [u8; SOCKET],

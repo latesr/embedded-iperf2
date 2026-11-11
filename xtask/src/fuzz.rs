@@ -1,4 +1,5 @@
-//! Runs the fuzz target, seeded with each message in the recorded samples.
+//! `cargo xtask fuzz [--seconds <n>]`: seeds the corpus with each record of each sample, then runs the fuzz target
+//! on nightly. A crash input lands under `fuzz/artifacts/parse/`.
 
 use crate::record::sample;
 use std::fs;
@@ -8,8 +9,8 @@ use std::process::Command;
 /// The target in the `fuzz` crate.
 const TARGET: &str = "parse";
 
-/// The largest input the fuzzer builds. The longest message is the 128-byte server report, and a UDP prefix can
-/// come before a header.
+/// The largest input the fuzzer builds. The longest message is the 128-byte server report. A UDP prefix can come
+/// before a header.
 const MAX_LEN: usize = 512;
 
 /// Copies every sample message into the corpus, then runs the target on nightly for `seconds`.
@@ -39,8 +40,8 @@ pub fn run(root: &Path, seconds: u64) -> Result<(), String> {
     }
 }
 
-/// Each record of each sample is a starting input, named `<version>-<case>-<index>`. A TCP record is one read,
-/// so it starts at a message only sometimes. The fuzzer finds the rest.
+/// Writes the first `MAX_LEN` bytes of each record of each sample to the corpus, as `<version>-<case>-<index>`. A
+/// TCP record is one read, so it does not always start at a message. The fuzzer finds the other messages.
 fn seed_corpus(root: &Path) -> Result<(), String> {
     let corpus = root.join("fuzz/corpus").join(TARGET);
     fs::create_dir_all(&corpus).map_err(|error| format!("{}: {error}", corpus.display()))?;

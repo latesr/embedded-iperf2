@@ -1,10 +1,15 @@
-//! `cargo xtask hil`: builds the S31 firmware, flashes it, and runs our client and our server on the board against
-//! iperf 2.2.2 and our `std` driver on this machine (T-7). The installed `mcu-run` flashes the board and sends each
-//! console line. The board's client is `mcu-net`'s `net iperf`, and its server is the firmware's `iperf -s`.
+//! `cargo xtask hil --probe <selector> [--case <text>]`: builds the S31 firmware, flashes it, and runs T-7. T-7 tests
+//! the board's client and server against iperf 2.2.2 and the crate's `std` driver on this machine. The installed
+//! `mcu-run` flashes the board and sends each console line. The board's client is `mcu-net`'s `net iperf`, and its
+//! server is the firmware's `iperf -s`.
 //!
-//! Each run checks that the receiver lost no datagram and saw none out of order, that both ends count the same
-//! bytes, and that a test in time mode lasted its length at the receiver. Our `std` driver runs in this process, in
-//! the build profile of `xtask`.
+//! Each run checks these things:
+//!
+//! 1. The receiver did not lose a datagram, and did not see one out of order.
+//! 2. Both ends count the same bytes.
+//! 3. A test in time mode lasted its length at the receiver.
+//!
+//! The crate's `std` driver runs in this process, in the build profile of `xtask`.
 
 mod reply;
 
@@ -18,7 +23,7 @@ use std::process::{Command, Stdio};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
-/// The firmware's folder, its target and its binary.
+/// The firmware's folder, its target, and its binary.
 const FIRMWARE: &str = "firmware/esp32-s31";
 const TARGET: &str = "riscv32imafc-unknown-none-elf";
 const BINARY: &str = "embedded-iperf2-esp32-s31";
@@ -26,11 +31,11 @@ const BINARY: &str = "embedded-iperf2-esp32-s31";
 /// The log line the firmware writes once its console runs.
 const STARTED: &str = "console firmware";
 
-/// How long the board may take to boot, and then to take a lease.
+/// The longest time the board can take to boot, and then to take a lease.
 const BOOT: Duration = Duration::from_secs(60);
 const LEASE: Duration = Duration::from_secs(30);
 
-/// How long a console command may take beyond its test.
+/// The longest time a console command can take beyond its test.
 const SLACK: Duration = Duration::from_secs(20);
 
 /// How long the host waits after it starts the board's server before its client starts. `mcu-run console` prints a
@@ -43,16 +48,16 @@ const STOCK_START: Duration = Duration::from_millis(300);
 /// The port the board's server listens on.
 const BOARD_PORT: u16 = 5001;
 
-/// The longest our `std` server waits for a test and lets one last (D-7, P-15).
+/// The longest time that the crate's `std` server waits for a test, and lets a test last (D-7, P-15).
 const HOST_LIMIT: Duration = Duration::from_secs(60);
 
-/// The length of our `std` ends' work buffers. A reverse TCP test sends bursts of up to 128 KiB.
+/// The length of the work buffer of each `std` end. A reverse TCP test sends bursts of up to 128 KiB.
 const WORK: usize = 131_072;
 
 /// The default burst of an iperf 2.2.2 server in a reverse TCP test (P-16).
 const STOCK_BURST: u64 = 131_072;
 
-/// How much shorter than its length a test in time mode may last at its receiver, in hundredths of a second.
+/// How much shorter than its length a test in time mode can last at its receiver, in hundredths of a second.
 const SHORT_BY: u64 = 25;
 
 /// One test, as the options of `net iperf` and of a stock client give it.
@@ -126,8 +131,8 @@ impl Case {
     }
 }
 
-/// T-5's modes at 10 Mbit/s for UDP, then the tests in which the devkit saw faults on 2026-10-18: UDP at 95 Mbit/s,
-/// and a reverse TCP test that ended early once in six.
+/// Each mode of T-5, with UDP at 10 Mbit/s, then the tests that found faults on the devkit. These are UDP at
+/// 95 Mbit/s, and a reverse TCP test. The reverse TCP test ended early in one run of six, so these tests repeat.
 fn cases() -> Vec<Case> {
     let mut cases = Vec::new();
     for transport in [Transport::Tcp, Transport::Udp] {
@@ -180,8 +185,8 @@ enum Host {
     Ours,
 }
 
-/// Builds and flashes the firmware, then runs each case whose name holds `only`, or every case. Fails when a run
-/// fails, after every run.
+/// Builds and flashes the firmware, then runs every case, or each case with a name that holds `only`. Fails after
+/// the last run when any run failed.
 pub fn run(root: &Path, probe: &str, only: Option<&str>) -> Result<(), String> {
     let (stock, _) = iperf::binary()?;
     let elf = build(&root.join(FIRMWARE))?;
@@ -294,7 +299,7 @@ fn check(case: &Case, end: Board, side: Host, board: &Counts, host: &Counts) -> 
         ));
     }
     // An iperf 2.2.2 server in a reverse TCP test in byte mode sends whole bursts past the count, up to one default
-    // burst more, and our client stops once the count has arrived.
+    // burst more. The crate's client on the board stops once the count has arrived.
     let stock_sends_bursts = case.transport == Transport::Tcp
         && case.reverse
         && end == Board::Client
@@ -347,7 +352,7 @@ impl Waiting {
     }
 }
 
-/// Starts our `std` server for one test on a free port, and returns the port and the thread that runs it.
+/// Starts the crate's `std` server for one test on a free port. Returns the port and the thread that runs the server.
 fn serve(transport: Transport) -> Result<(u16, JoinHandle<Result<Counts, String>>), String> {
     let config = ServerConfig {
         transport,
@@ -403,7 +408,7 @@ fn one_server_test(
     ended(outcome, last)
 }
 
-/// Runs our `std` client of `case` against the board's server.
+/// Runs the crate's `std` client of `case` against the board's server.
 fn our_client(board: Ipv4Addr, case: &Case) -> Result<Counts, String> {
     let mut buffer = vec![0; WORK];
     let mut client =
@@ -417,7 +422,7 @@ fn our_client(board: Ipv4Addr, case: &Case) -> Result<Counts, String> {
     ended(outcome, last)
 }
 
-/// The counts of a final report from our driver, or why the test failed.
+/// The counts of a final report from the crate's `std` driver, or why the test failed.
 fn ended(
     outcome: std::io::Result<Result<(), embedded_iperf2::TestError>>,
     last: Option<Report>,
@@ -536,8 +541,9 @@ fn send(probe: &str, line: &str, timeout: Duration) -> Result<String, String> {
     )
 }
 
-/// Sends the line of a command that runs until stopped, and stops it with Ctrl-C after `limit`, so the board never
-/// runs it past this machine's side of the test. `mcu-run` sends a second Ctrl-C at twice `limit`.
+/// Sends the line of a command that runs until it is stopped, and stops the command with Ctrl-C after `limit`. The
+/// board then never runs the command past this machine's side of the test. `mcu-run` sends a second Ctrl-C at twice
+/// `limit`.
 fn send_stopped_after(probe: &str, line: &str, limit: Duration) -> Result<String, String> {
     let timeout = limit.saturating_mul(2).saturating_add(SLACK);
     run_mcu_run(

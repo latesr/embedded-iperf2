@@ -1,5 +1,17 @@
-//! Runs the checks. The link and prose checks go first, because they take under a second and a
-//! writing fault should fail before the builds.
+//! `cargo xtask check [--full]`: runs these checks in order, and stops at the first failure:
+//!
+//! 1. the links and the prose
+//! 2. the toolchain file
+//! 3. the format
+//! 4. the lints and the tests of the crates that the change reaches, or of every crate with `--full`, with every
+//!    feature on, then off
+//! 5. the docs
+//! 6. with `--full`, each combination of up to two features
+//! 7. the build of each published crate for each target in `rust-toolchain.toml`
+//! 8. the workspace at its minimum supported Rust version (MSRV)
+//!
+//! The link and prose checks take under a second. They go first, so a writing fault fails before the builds. A
+//! change that is only markdown skips every cargo check.
 
 use crate::shared;
 use crate::shared::checks::{changed_paths, feature_runs, only_markdown, reached_packages, step};
@@ -30,7 +42,7 @@ pub fn run(root: &Path, full: bool) -> Result<(), String> {
     shared::prose::run(root, None)?;
     println!("==> toolchain");
     shared::toolchain::check(root)?;
-    // The root workspace is the one group. No code reads a markdown file at run time, so it names no markdown path.
+    // The root workspace is the only group. No code reads a markdown file at run time, so the list of paths is empty.
     if only_markdown(&changed, &[]) {
         println!("==> every cargo check skipped, because the change is only markdown");
         return Ok(());
@@ -102,9 +114,9 @@ pub fn run(root: &Path, full: bool) -> Result<(), String> {
     Ok(())
 }
 
-/// The `cargo` arguments that build the published crates for each target, once without features and once with
-/// each of `features`, each named for its step. With no published crates there is nothing to build, and
-/// `cargo build` without `--package` would build `xtask` for a microcontroller.
+/// The `cargo` arguments that build the published crates for each target, each with the name of its step. Each
+/// target builds once without features, then once with each of `features`. The list is empty when `published` is
+/// empty, because `cargo build` without `--package` builds `xtask` for a microcontroller.
 fn cross_builds(
     targets: &[String],
     published: &[&str],
@@ -137,7 +149,7 @@ fn cargo(root: &Path) -> Command {
     command
 }
 
-/// The targets listed in `rust-toolchain.toml`. That file is what rustup installs, so it owns the list.
+/// The targets listed in `rust-toolchain.toml`. rustup installs the targets in that file, so the file owns the list.
 fn toolchain_targets(root: &Path) -> Result<Vec<String>, String> {
     let table = read_toml(&root.join("rust-toolchain.toml"))?;
     let targets = table

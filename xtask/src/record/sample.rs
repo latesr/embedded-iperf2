@@ -3,7 +3,7 @@
 //! A sample file is a list of records in the order the relay saw them. Each record is one byte for the direction,
 //! a 32-bit big-endian length, and that many bytes. The direction is 0 for bytes from the client to the server
 //! and 1 for bytes from the server to the client. A UDP record is one datagram. A TCP record is one read from the
-//! socket, so its length means nothing.
+//! socket, so its length does not follow the message boundaries.
 
 /// Which way a record's bytes went.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

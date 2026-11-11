@@ -1,6 +1,6 @@
 //! The embedded-iperf2 firmware for the ESP32-S31-Function-CoreBoard-1. It runs the devkit's console over USB
-//! Serial/JTAG with `mcu-net`'s `net` commands over Ethernet, whose `net iperf` runs our client, and `iperf -s`,
-//! which runs our server. `cargo xtask hil` drives it (T-7).
+//! Serial/JTAG. The console has `mcu-net`'s `net` commands over Ethernet, and `iperf -s`. `net iperf` runs the
+//! crate's client, and `iperf -s` runs the crate's server. `cargo xtask hil` drives the firmware (T-7).
 
 #![no_std]
 #![no_main]

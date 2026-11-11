@@ -1,7 +1,7 @@
-//! What `cargo xtask hil` reads: a line of the board's console reply, such as `result:`, and the last report a stock
-//! iperf prints with `-y C`.
+//! Reads the two reports that `cargo xtask hil` compares. One is a line of the board's console reply, such as
+//! `result:`. The other is the last report that a stock iperf prints with `-y C`.
 
-/// One end's final report.
+/// The counts in one end's final report.
 #[derive(Debug, PartialEq)]
 pub struct Counts {
     /// The length of the report, from its start to its end, in hundredths of a second.
@@ -39,9 +39,9 @@ pub fn board(printed: &str, key: &str) -> Result<Counts, String> {
     })
 }
 
-/// Reads the last report line that a stock iperf printed with `-y C`. A TCP line has 9 fields: the interval in the
-/// seventh and the bytes in the eighth. A UDP line adds the jitter, the lost datagrams, the total, the percent lost
-/// and the out-of-order datagrams.
+/// Reads the last report line that a stock iperf printed with `-y C`. A TCP line has nine fields. The seventh is the
+/// interval, and the eighth is the bytes. A UDP line adds the jitter, the lost datagrams, the total, the percent
+/// lost, and the out-of-order datagrams.
 pub fn stock(printed: &str) -> Result<Counts, String> {
     let line = printed
         .lines()
