@@ -22,7 +22,3 @@ The recorder and the interoperability tests need the binary that `MCU_IPERF2` na
 ## Fuzzing
 
 `cargo xtask fuzz --seconds N` seeds the corpus with each record of each sample, and runs the `parse` target in `fuzz/` for that long. The files that count as a parser are `embedded-iperf2/src/wire/`.
-
-## Hardware tests
-
-`cargo xtask hil --probe <selector>` runs T-7 on the S31. It needs the installed `mcu-run`, `MCU_IPERF2`, and clones of embedded-devkit and esp-hal beside this repo. The firmware's `Cargo.toml` says why.

@@ -1,5 +1,5 @@
-//! Builds the stock iperf at the pinned version, checks its version, and runs it as a server. The recorder,
-//! `cargo xtask hil`, and the interoperability tests run that binary. `cargo xtask install-iperf` builds it.
+//! Builds the stock iperf at the pinned version, checks its version, and runs it as a server. The recorder and the
+//! interoperability tests run that binary. `cargo xtask install-iperf` builds it.
 
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Output, Stdio};

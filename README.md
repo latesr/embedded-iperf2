@@ -27,8 +27,6 @@ The build needs `git`, a C and C++ compiler, and `make`. Then set `MCU_IPERF2` t
 
 `cargo xtask check` runs the checks of a change: the links and the prose, the format, the lints, the tests, and the docs. `cargo xtask check --full` runs every check that CI runs. The interoperability tests need `MCU_IPERF2`, and fail without it.
 
-`cargo xtask hil --probe <selector>` runs the hardware tests on an ESP32-S31 board. It needs the installed `mcu-run`, `MCU_IPERF2`, and clones of embedded-devkit and esp-hal beside this repo.
-
 ## Licence
 
 Users may choose either the [MIT licence](LICENSE-MIT) or the [Apache-2.0 licence](LICENSE-APACHE).

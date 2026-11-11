@@ -2,7 +2,6 @@
 
 mod check;
 mod fuzz;
-mod hil;
 mod iperf;
 mod record;
 mod shared;
@@ -38,15 +37,6 @@ enum Command {
         #[arg(long, default_value_t = 60)]
         seconds: u64,
     },
-    /// Flash the S31 firmware, then test the board's client and server against iperf 2.2.2 and the crate's std driver.
-    Hil {
-        /// The `mcu-run` selector of the board.
-        #[arg(long)]
-        probe: String,
-        /// Run only the cases with a name that holds this text, such as "udp -t 5".
-        #[arg(long)]
-        case: Option<String>,
-    },
     #[command(flatten)]
     Shared(shared::Command),
 }
@@ -59,7 +49,6 @@ fn main() {
         Command::Record { only } => record::run(&root, &only),
         Command::InstallIperf => iperf::install(),
         Command::Fuzz { seconds } => fuzz::run(&root, seconds),
-        Command::Hil { probe, case } => hil::run(&root, &probe, case.as_deref()),
         Command::Shared(command) => shared::run(&root, command),
     };
     if let Err(message) = result {

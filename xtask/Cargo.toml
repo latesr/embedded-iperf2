@@ -10,8 +10,6 @@ repository.workspace = true
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }
-# The `std` driver, one of `cargo xtask hil`'s host ends.
-embedded-iperf2 = { path = "../embedded-iperf2", features = ["std"] }
 if-addrs = "0.15"
 object = { version = "0.40", default-features = false, features = ["read_core", "elf", "std"] }
 pulldown-cmark = { version = "0.13", default-features = false }

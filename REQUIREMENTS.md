@@ -276,14 +276,6 @@ Without a start timeout, the server waits without a limit. A start timeout of ze
 | `thumbv7em-none-eabihf` | Build on every CI push |
 | `thumbv6m-none-eabi` | Build on every CI push |
 
-### Reference boards
-
-The boards come from embedded-devkit, and the firmware builds on its board crates.
-
-| Board | Chip |
-|---|---|
-| ESP32-S31 Function CoreBoard-1 | ESP32-S31 |
-
 ## Constraints
 
 - The crates build on stable Rust. The minimum supported Rust version (MSRV) is 1.91, with edition 2024.
@@ -316,16 +308,6 @@ The boards come from embedded-devkit, and the firmware builds on its board crate
 **T-5** On loopback, the `std` driver runs a client against a stock iperf 2.2.2 server, and a server against a stock iperf 2.2.2 client. Each runs TCP and UDP, forward and reverse, in time mode and byte mode. The report of the stock binary and the report of the driver agree on the bytes, and on the lost and out-of-order counts.
 
 **T-6** The `embassy-net` driver runs a client against its own server over two embassy-net stacks in one process, in each mode of T-5.
-
-### Hardware tests
-
-**T-7** Firmware under `firmware/<board>/` runs a client and a server in each mode of T-5. It builds on the embedded-devkit board crate of the reference board. The other end is a stock iperf 2.2.2 or the `std` driver on the host. In each run, these must be true:
-
-- The receiver loses no datagram.
-- A test in time mode lasts its length at the receiver.
-- Both ends count the same bytes. In a reverse TCP test in byte mode against a stock server, the receiver instead counts at least the byte count, and no more than the server sent.
-
-`cargo xtask hil` runs these tests by hand, never in CI.
 
 ### Continuous integration
 
