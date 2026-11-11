@@ -1,8 +1,8 @@
 # Requirements
 
-embedded-iperf2 is an iperf 2 client and server for microcontrollers, wire compatible with iperf 2.2.2. The core is `no_std`, does not allocate memory, and is sans-I/O. The core does not read from the network, write to it, or keep time. The caller moves the bytes and supplies the time. Two drivers behind cargo features do the I/O: one over embassy-net for a board, and one over the standard library for a host.
+embedded-iperf2 is an iperf 2 client and server for microcontrollers, wire compatible with iperf 2.2.2. The core is `no_std`, does not allocate memory, and is sans-I/O. The core does not read from the network, write to it, or keep time. The caller moves the bytes and supplies the time as a monotonic count of microseconds. Two drivers behind cargo features do the I/O: one over embassy-net for a board, and one over the standard library for a host.
 
-Each requirement has an ID, such as W-3 or P-12. Tests, plans, and commits cite the ID. An ID is never reused after its requirement is removed. The letter names the requirement's section:
+Each requirement has an ID, such as W-3. The letter names its section:
 
 - W, the wire format
 - P, the protocol of the client and the server
@@ -11,11 +11,10 @@ Each requirement has an ID, such as W-3 or P-12. Tests, plans, and commits cite 
 
 ## Terms
 
-Each term has one meaning.
-
 | Term | Meaning |
 |---|---|
 | Stock iperf | A stock iperf is a binary built from the iperf2 repository at commit `74d4b553`, the tip of the branch `2-2-2`. `cargo xtask install-iperf` builds it. |
+| Compatible with iperf 2.2.2 | A stock client and a stock server work against this crate in each v1 mode, and print the same report fields. The datagrams do not need to be equal byte for byte. |
 | Client | The client starts a test. It opens the connection and sends the test header. |
 | Server | The server listens for tests and accepts them. |
 | Sender and receiver | The sender sends the data of a test, and the receiver receives it. The client is the sender, except in a reverse test. |
@@ -34,31 +33,25 @@ Each term has one meaning.
 
 ## Why another one?
 
-On 2026-10-05, crates.io did not have a `no_std` iperf crate. Every iperf crate there is a host tool, and most of them use iperf3. This crate uses iperf 2, so a maintainer can repeat a figure from a board with a stock `iperf` on a host.
+On 2026-10-05, crates.io did not have an iperf crate that runs on a microcontroller. This crate implements the iperf 2 protocol, so a stock iperf 2.2.2 can run on the host.
 
 ## Goals
 
 - A board runs an iperf 2 client or server against a stock iperf 2.2.2 on a host, over TCP or UDP, in either direction.
 - A host runs the same client and server through the `std` driver, so a test tool such as `mcu-run` can be the host end.
-- The core runs on ESP32 and STM32 microcontrollers without a heap.
-- Each wire format is checked against samples recorded from a stock iperf 2.2.2, not only against a reading of the source.
-
-## Design principles
-
-- Compatible with iperf 2.2.2 means that a stock client and a stock server work against this crate, in each v1 mode, and print the same report fields. The datagrams do not need to be equal byte for byte, because the timestamps and the payload fill differ.
-- The core takes the time from the caller as a monotonic count of microseconds.
 
 ## Out of scope for v1
 
-| Feature | What v1 does |
-|---|---|
-| Parallel streams, `-P` | The server refuses the test. See P-13. |
-| Tradeoff and dual tests, `-r` and `-d` | The server refuses the test. See P-13. |
-| Full duplex, `--full-duplex` | The server refuses the test. See P-13. |
-| Isochronous tests, bursts, `--trip-times`, and bounceback | The server refuses the test. See P-13. |
-| L4S, multicast, and the choice of congestion control | The server refuses the test. See P-13. |
-| Permit keys | The server refuses the test. See P-13. |
-| IPv6 on a board | The `embassy-net` driver uses IPv4. See D-4. |
+The server refuses a test that asks for one of these features (P-13):
+
+- parallel streams, `-P`
+- tradeoff and dual tests, `-r` and `-d`
+- full duplex, `--full-duplex`
+- isochronous tests, bursts, `--trip-times`, and bounceback
+- L4S, multicast, and the choice of congestion control
+- permit keys
+
+The `embassy-net` driver uses IPv4 only (D-4).
 
 ## Crates
 
@@ -269,8 +262,8 @@ Without a start timeout, the server waits without a limit. A start timeout of ze
 
 ## Security
 
-- The server reads bytes from the network. Each length and offset is checked before use (W-12). A header that the server cannot read refuses the test, and never causes a panic.
-- A server answers any client that reaches it. Permit keys are out of scope, so a server must run only on a network that the caller trusts.
+- A server refuses a test with a header that it cannot read.
+- A server answers any client that reaches it, so it must run only on a network that the caller trusts.
 
 ## Platforms
 
@@ -287,22 +280,18 @@ Without a start timeout, the server waits without a limit. A start timeout of ze
 
 The boards come from embedded-devkit, and the firmware builds on its board crates.
 
-| Board | Chip | Order |
-|---|---|---|
-| ESP32-S31 Function CoreBoard-1 | ESP32-S31 | First |
-| ESP32-C5-DevKitC-1 | ESP32-C5 | Second |
+| Board | Chip |
+|---|---|
+| ESP32-S31 Function CoreBoard-1 | ESP32-S31 |
 
 ## Constraints
 
 - The crates build on stable Rust. The minimum supported Rust version (MSRV) is 1.91, with edition 2024.
-- The core is `no_std` and does not allocate memory.
 - A public API names types from `embassy-net` only behind the `embassy-net` feature, and from the standard library only behind the `std` feature.
 
 `EMBEDDED.md` names the lints that enforce the code constraints.
 
 ## Testing
-
-Development is test first. `TESTING.md` states how a developer writes and checks tests. This section states what the test suite must contain, and what CI runs.
 
 ### Samples
 
@@ -347,8 +336,4 @@ Development is test first. `TESTING.md` states how a developer writes and checks
 
 ## Licence
 
-Users may choose either the MIT licence or the Apache-2.0 licence. The Cargo `license` field is `MIT OR Apache-2.0`. Contributions are licensed on the same terms.
-
-## Open questions
-
-None.
+Users may choose either the MIT licence or the Apache-2.0 licence. Contributions are licensed on the same terms.
