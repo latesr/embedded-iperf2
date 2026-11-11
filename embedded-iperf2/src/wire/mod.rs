@@ -2,7 +2,7 @@
 //! server report.
 //!
 //! Every field is big-endian. Each message has a fixed length. `parse` reads one message from the start of a
-//! slice. `encode` writes one message to the start of a slice, and returns its length. `REQUIREMENTS.md` states each
+//! slice. `encode` writes the whole message to the start of a slice, fill included, and returns its length. The bytes on the wire then do not depend on what the slice held before. `REQUIREMENTS.md` states each
 //! layout under W-1 to W-13.
 
 mod ack;

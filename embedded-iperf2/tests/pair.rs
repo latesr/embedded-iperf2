@@ -2,6 +2,9 @@
 //!
 //! The tests cover TCP and UDP, forward and reverse, in time and byte mode. A loop moves the bytes between the two
 //! ends. It moves a shared clock to the earliest time that either end waits for.
+//!
+//! The loop polls each end in turn, so it makes only one order of events. A behaviour that depends on the order
+//! of events must have a test that makes that order.
 
 #![allow(
     clippy::unwrap_used,

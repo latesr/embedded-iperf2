@@ -50,6 +50,10 @@ const CLOSE_TIMEOUT: Duration = Duration::from_secs(1);
 /// delays an ACK by 10 ms, and embassy-net 0.9.1 cannot turn the delay off. A socket that the caller drops, or
 /// that accepts again, before then never sends the ACK, and the peer waits for it. `listen` resets the socket's
 /// ACK timer.
+///
+/// See <https://docs.rs/crate/smoltcp/0.13.1/source/src/socket/tcp.rs#296>.
+/// and <https://docs.rs/crate/smoltcp/0.13.1/source/src/socket/tcp.rs#911>.
+/// and <https://docs.rs/crate/embassy-net/0.9.1/source/src/tcp.rs#467>.
 const DELAYED_ACK_WAIT: Duration = Duration::from_millis(20);
 
 /// Why a run failed before or outside its test.
@@ -334,6 +338,8 @@ async fn run(
 /// Closes `socket` after a test, so that it can connect or accept again. A clean close leaves it in TIME-WAIT,
 /// and a socket in TIME-WAIT can connect or accept again. A peer that does not finish its side of the close
 /// within the limit gets a RST instead.
+///
+/// See <https://docs.rs/crate/smoltcp/0.13.1/source/src/socket/tcp.rs#1122>.
 async fn end(socket: &mut TcpSocket<'_>) {
     socket.close();
     let drain = async { while socket.read_with(|bytes| (bytes.len(), ())).await.is_ok() {} };
@@ -350,6 +356,9 @@ async fn end(socket: &mut TcpSocket<'_>) {
 
 /// Waits until the stack has sent the datagrams left in `socket`, such as the end of the test. A socket that the
 /// caller drops removes its datagrams from the stack, sent or not.
+///
+/// See <https://docs.rs/crate/embassy-net/0.9.1/source/src/udp.rs#330>.
+/// and <https://docs.rs/crate/embassy-net/0.9.1/source/src/udp.rs#395>.
 async fn flush(socket: &mut UdpSocket<'_>) {
     let _ = select(socket.flush(), Timer::after(CLOSE_TIMEOUT)).await;
 }
