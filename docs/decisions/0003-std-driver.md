@@ -12,9 +12,10 @@ On a host, the driver joins the core to `std::net` sockets. Host tools such as `
 
 - The driver uses blocking sockets on the caller's thread. A tool runs one test at a time, so nothing needs to run in parallel, and the `std` feature does not need a runtime. A caller on tokio can run the driver with `spawn_blocking`.
 - The caller creates the `Client` or `Server` and passes it in. A bad setting then fails in `new`, and the driver returns only socket errors and the result of the test.
-- The driver reads without blocking before every `poll`. A sender without a rate limit never waits, so a driver that reads only during a wait misses the peer's close, and a second client that the server must refuse (P-14).
+- The driver reads without blocking before every `poll`. A sender without a rate limit never waits, so a driver that reads only during a wait misses the peer's close. A TCP server also misses a second connection, which it must refuse (P-14).
 - A UDP server takes the source of the first datagram as its client, and drops the datagrams from other sources until the test ends. `std` cannot disconnect a UDP socket, so a connected socket could serve only its first client.
-- A server's start timeout is a setting, so `run_one` keeps one signature. With a timeout, a TCP server polls a non-blocking accept, because `std` does not have an accept with a timeout, and nothing can wake a blocking accept.
+- A server's start timeout is a setting on the server, not a parameter of `run_one`, so `run_one` keeps one signature.
+- With a start timeout, a TCP server polls a non-blocking accept. `std` does not have an accept with a timeout, and nothing can wake a blocking accept.
 
 ## Rejected
 

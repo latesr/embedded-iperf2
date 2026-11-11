@@ -10,7 +10,8 @@ The test header of iperf 2.2.2 holds the mode of a test in its flag bits. A v1 s
 
 ## Decision
 
-- A parser refuses only bytes that cannot be the message, such as a length out of bounds. `TestHeader` keeps its three flag words as plain numbers, and the server decides which tests run. The server can then tell a mode that it does not serve from corrupt bytes, and apply the stock ack rule, which reads bits that no v1 mode names.
+- A parser checks only that the bytes form the message, such as a length within bounds. It does not check which mode a test header asks for.
+- `TestHeader` keeps its three flag words as plain numbers, and the server reads them. A header that asks for a mode outside v1 is then a valid header that the server refuses, not corrupt bytes. The server also needs the raw bits for the stock ack rule, which reads bits such as `V2PEERDETECT` that no v1 mode uses.
 - `header_length` reads the fill of a UDP client run with `-C` as no header, as the stock server does ([`src/Listener.cpp:1402`](https://sourceforge.net/p/iperf2/code/ci/74d4b55321b9e7827c6567f3e48ae024ba3417c8/tree/src/Listener.cpp#l1402)). The check is in the parser, so a caller cannot forget it.
 - The server report does not set `EXTEND`, and holds zeros in the transit statistics, so a board does not compute statistics that nothing reads.
 
