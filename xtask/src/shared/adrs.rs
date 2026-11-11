@@ -1,18 +1,27 @@
 // A copy from embedded-devkit/xtask/src/shared. Edit it there, then run `cargo xtask sync` in the devkit.
 
 //! Checks that every Architectural Decision Record (ADR) in `docs/decisions/` has the shape `DOCS.md` states: the
-//! file name, the title, the status line, and the sections in order.
+//! file name, the title, the status line, the sections in order, and the word limit of the short shape.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-const SECTIONS: [&str; 5] = [
+/// The sections of the old shape, which stays valid until every repo has converted to the short shape.
+const OLD_SECTIONS: [&str; 5] = [
     "Summary",
     "Context",
     "Decision",
     "Alternatives",
     "Consequences",
 ];
+
+/// The sections of the short shape, before its optional `Consequences`.
+const SHORT_SECTIONS: [&str; 3] = ["Context", "Decision", "Rejected"];
+
+/// The number of words that an ADR in the short shape can hold.
+const MAX_WORDS: usize = 500;
+
+const SECTIONS_PROBLEM: &str = "the sections are not Context, Decision, Rejected and an optional Consequences, or the old Summary, Context, Decision, Alternatives and Consequences, with an optional History last";
 
 /// One line per problem in the ADRs among `pages`, which are keyed by their path relative to the repo root.
 pub(super) fn check(pages: &BTreeMap<PathBuf, String>) -> Vec<String> {
@@ -60,11 +69,18 @@ pub(super) fn check(pages: &BTreeMap<PathBuf, String>) -> Vec<String> {
             ));
         }
         let found = sections(text);
-        if found.strip_suffix(&["History"]).unwrap_or(&found) != SECTIONS {
-            problems.push(format!(
-                "{}: the sections are not Summary, Context, Decision, Alternatives and Consequences, with an optional History last",
-                path.display()
-            ));
+        let found = found.strip_suffix(&["History"]).unwrap_or(&found);
+        let short = found.strip_suffix(&["Consequences"]).unwrap_or(found) == SHORT_SECTIONS;
+        if short {
+            let words = text.split_whitespace().count();
+            if words > MAX_WORDS {
+                problems.push(format!(
+                    "{}: the ADR has {words} words, and the limit is {MAX_WORDS}",
+                    path.display()
+                ));
+            }
+        } else if found != OLD_SECTIONS {
+            problems.push(format!("{}: {SECTIONS_PROBLEM}", path.display()));
         }
     }
     problems
@@ -126,6 +142,93 @@ mod tests {
         assert_eq!(found, Vec::<String>::new());
     }
 
+    const SHORT: &str = "# ADR-0001: Do it\n\n**Status: accepted**\n\nCovers: x.\n\n## Context\n\nC.\n\n## Decision\n\n- D.\n\n## Rejected\n\n- **An option.** A reason.\n";
+
+    /// `SHORT` with words added until the file holds `words` words.
+    fn short_with(words: usize) -> String {
+        let padding = words
+            .checked_sub(SHORT.split_whitespace().count())
+            .expect("`words` covers SHORT's own words");
+        format!("{SHORT}\n{}\n", "word ".repeat(padding))
+    }
+
+    #[test]
+    fn the_short_shape_passes_with_or_without_consequences_and_history() {
+        let consequences = format!("{SHORT}\n## Consequences\n\n- A cost.\n");
+        let history = "\n## History\n\n- 2027-01-01: Amended: a word.\n";
+        let found = check(&pages(&[
+            ("docs/decisions/0001-short.md", SHORT),
+            (
+                "docs/decisions/0002-costs.md",
+                &consequences.replace("0001", "0002"),
+            ),
+            (
+                "docs/decisions/0003-amended.md",
+                &format!("{consequences}{history}").replace("0001", "0003"),
+            ),
+            (
+                "docs/decisions/0004-amended.md",
+                &format!("{SHORT}{history}").replace("0001", "0004"),
+            ),
+            (
+                "docs/decisions/0005-limit.md",
+                &short_with(500).replace("0001", "0005"),
+            ),
+        ]));
+        assert_eq!(found, Vec::<String>::new());
+    }
+
+    #[test]
+    fn only_the_short_shape_has_a_word_limit() {
+        let long_old = format!("{GOOD}\n{}\n", "word ".repeat(600));
+        let found = check(&pages(&[
+            ("docs/decisions/0001-old.md", &long_old),
+            (
+                "docs/decisions/0002-long.md",
+                &short_with(501).replace("0001", "0002"),
+            ),
+        ]));
+        assert_eq!(
+            found,
+            vec![
+                "docs/decisions/0002-long.md: the ADR has 501 words, and the limit is 500"
+                    .to_owned()
+            ]
+        );
+    }
+
+    #[test]
+    fn a_mix_of_the_two_shapes_or_a_short_shape_out_of_order_is_reported() {
+        let found = check(&pages(&[
+            (
+                "docs/decisions/0001-mixed.md",
+                &SHORT.replace("## Context", "## Summary\n\n- A rule.\n\n## Context"),
+            ),
+            (
+                "docs/decisions/0002-order.md",
+                &SHORT
+                    .replace("0001", "0002")
+                    .replace("## Decision", "## Swap")
+                    .replace("## Rejected", "## Decision")
+                    .replace("## Swap", "## Rejected"),
+            ),
+            (
+                "docs/decisions/0003-both.md",
+                &SHORT
+                    .replace("0001", "0003")
+                    .replace("## Rejected", "## Alternatives"),
+            ),
+        ]));
+        assert_eq!(
+            found,
+            vec![
+                format!("docs/decisions/0001-mixed.md: {SECTIONS_PROBLEM}"),
+                format!("docs/decisions/0002-order.md: {SECTIONS_PROBLEM}"),
+                format!("docs/decisions/0003-both.md: {SECTIONS_PROBLEM}"),
+            ]
+        );
+    }
+
     #[test]
     fn each_broken_rule_is_reported() {
         let found = check(&pages(&[
@@ -160,7 +263,7 @@ mod tests {
                     .replace("**Status: accepted**", "Text.\n\n**Status: accepted**"),
             ),
         ]));
-        let sections = "the sections are not Summary, Context, Decision, Alternatives and Consequences, with an optional History last";
+        let sections = SECTIONS_PROBLEM;
         assert_eq!(
             found,
             vec![

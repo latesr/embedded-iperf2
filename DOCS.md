@@ -25,13 +25,18 @@ An ADR records a decision about the product, or about how it is built, tested, a
 
 One ADR covers one mechanism, such as reconnect or factory reset, and every decision inside it. It is written when the step that builds the mechanism is done and reviewed. Until then the plan holds the step's decisions.
 
-A choice belongs in an ADR when a competent newcomer would propose the option it rejected. A parameter, a name, an error variant, or a choice without a second option does not. A Summary bullet states the rule in one sentence, and what the rule makes happen in a second. It cites the requirement IDs it meets, and leaves rejected options to Alternatives. It does not restate a requirement, a number, a signature, or a default.
+An ADR records a high-level decision that a newcomer would otherwise undo: the shape of a mechanism, not its parameters. A name, a number, a timeout, an error variant, or a choice without a second option does not go in an ADR. Detail goes in rustdoc, and a Decision bullet names the file that holds it. An ADR states a rule. It does not state a list of cases, because a list goes stale.
 
-ADRs live at `docs/decisions/NNNN-slug.md`. Each opens with `# ADR-NNNN: <the mechanism>`, such as `# ADR-0004: Reconnect`, and a bold status line: `**Status: accepted**`, `**Status: proposed**`, or `**Status: superseded by ADR-NNNN**`. A `Covers:` line follows, and names what the ADR describes. A `## Summary` section follows, with one bullet per decision as it stands. The Context, Decision, Alternatives, and Consequences follow the Summary. A new ADR gets its row in the index in `docs/README.md` in the same commit.
+ADRs live at `docs/decisions/NNNN-slug.md`. Each opens with `# ADR-NNNN: <the mechanism>`, a bold status line (`**Status: accepted**`, `**Status: proposed**`, or `**Status: superseded by ADR-NNNN**`), and a `Covers:` line. These sections follow:
 
-- The Context states the problem in enough detail that a newcomer could judge the decision from it. Where a newcomer's first answer does not work here, it says why, without calling that answer "obvious".
-- An ADR states a rule. It does not state a list of cases, because a list goes stale.
+- `## Context`: the problem, in a few sentences.
+- `## Decision`: one bullet for each decision, with its reason.
+- `## Rejected`: one bullet for each option that a newcomer would propose, as `**The option.** The reason it does not work here.`
+- `## Consequences`, when the decision costs a user something or obliges later work to do something: one bullet for each.
+
+An ADR has at most 500 words. A requirement ID appears only where the requirement is the reason for a decision. A new ADR gets its row in the index in `docs/README.md` in the same commit.
+
 - Until the first release, an ADR is edited in place to state the current decision, without a History bullet or a new ADR. The commit message says what changed.
-- After the first release, a change that keeps every Summary bullet is edited into the ADR. It adds a dated bullet to a `## History` section: `YYYY-MM-DD: Amended: <what changed>.`
-- After the first release, a change that reverses a Summary bullet is a new ADR. The new ADR says what it supersedes, and the old ADR's status becomes `superseded by ADR-NNNN`.
+- After the first release, a change that keeps every Decision bullet is edited into the ADR. It adds a dated bullet to a `## History` section: `YYYY-MM-DD: Amended: <what changed>.`
+- After the first release, a change that reverses a Decision bullet is a new ADR. The new ADR says what it supersedes, and the old ADR's status becomes `superseded by ADR-NNNN`.
 - A wording fix or a renamed path does not need a History bullet.
