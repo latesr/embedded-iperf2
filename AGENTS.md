@@ -6,16 +6,14 @@
 
 # embedded-iperf2
 
-Read `CONVENTIONS.md` first. It holds the rules shared by every repo that syncs from embedded-devkit. This file holds the rules for this repo only.
-
 embedded-iperf2 is an iperf 2 client and server for microcontrollers, wire compatible with iperf 2.2.2.
 
 ## The wire format
 
-`CONVENTIONS.md` states the rules for every format under Formats. These rules add to them. `REQUIREMENTS.md` states what the samples cover.
+`TESTING.md` states the rules for every format under Formats. These rules add to them. `REQUIREMENTS.md` states what the samples cover.
 
-- A sample is recorded from a stock iperf at the pinned version. It is never written by hand to match what we assume.
-- Committed samples change only when the recorder that made them was wrong. The commit names the fault and re-records every case. A new case may be added when every existing sample stays byte for byte the same.
+- A sample is recorded from a stock iperf at the pinned version. It is never written by hand to match an assumption.
+- Committed samples change only when the recorder that made them was wrong. The commit names the fault and re-records every case. A new case can be added when every existing sample stays byte for byte the same.
 - The timestamps and the payload fill in a sample differ on every run. A test compares the fields the format fixes, never a whole datagram.
 
 ## Recording the samples
@@ -26,7 +24,7 @@ The recorder and the interoperability tests need the binary that `MCU_IPERF2` na
 
 ## Fuzzing
 
-`cargo xtask fuzz --seconds N` seeds the corpus with each record of each sample, and runs the `parse` target in `fuzz/` on nightly for that long. It needs `cargo install cargo-fuzz` and a nightly toolchain. `CONVENTIONS.md` states when to run it. The files that count as a parser are `embedded-iperf2/src/wire/`. The nightly CI job runs it for ten minutes. A crash input lands under `fuzz/artifacts/parse/`, and the fix commits it as a regression test.
+`cargo xtask fuzz --seconds N` seeds the corpus with each record of each sample, and runs the `parse` target in `fuzz/` on nightly for that long. It needs `cargo install cargo-fuzz` and a nightly toolchain. `TESTING.md` states when to run it. The files that count as a parser are `embedded-iperf2/src/wire/`. The nightly CI job runs it for ten minutes. A crash input lands under `fuzz/artifacts/parse/`, and the fix commits it as a regression test.
 
 ## Hardware tests
 
