@@ -18,7 +18,7 @@ pub(crate) enum Stop {
 pub(crate) enum Next {
     /// The first `n` bytes of the buffer are the next chunk or datagram.
     Send(usize),
-    /// Nothing may be sent before this time.
+    /// The next send must wait until this time.
     Wait(u64),
     /// The sender has sent everything.
     Finished,
@@ -41,12 +41,12 @@ pub(crate) struct TcpSender {
     rate: u64,
     sent: u64,
     start_us: Option<u64>,
-    /// The burst whose header was last built, and its write time. A header cut by a short write is built again
-    /// with the same time.
+    /// The burst of the header built last, and its write time. A header cut by a short write is built again with
+    /// the same time.
     burst_write: Option<(u64, Timestamp)>,
     /// How many bytes at the start of the buffer hold a header rather than fill, or `None` before the first chunk
-    /// has filled the buffer. The sender fills the buffer once and rewrites only these bytes, so nothing else may
-    /// write the buffer while the sender sends.
+    /// has filled the buffer. The sender fills the buffer once, then rewrites only these bytes. Other code must
+    /// not write the buffer while the sender sends.
     header_bytes: Option<usize>,
 }
 
@@ -213,7 +213,7 @@ impl BurstReader {
         self.bytes
     }
 
-    /// Reads `bytes`. Fails on a burst header whose `burst_size` is below its own length.
+    /// Reads `bytes`. Fails on a burst header with a `burst_size` below the length of the header.
     pub(crate) fn received(&mut self, mut bytes: &[u8]) -> Result<(), TestError> {
         self.bytes = self.bytes.saturating_add(bytes.len() as u64);
         while !bytes.is_empty() {

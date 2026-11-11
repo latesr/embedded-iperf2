@@ -1,5 +1,6 @@
-//! The `std` driver: our client against our server on loopback, in each mode, and the rules that only a driver
-//! keeps (P-14, D-4, D-5, D-6, D-7).
+//! Tests the `std` driver with the crate's client against the crate's server on loopback, in each mode.
+//!
+//! The tests also cover the rules that only a driver keeps (P-14, D-4, D-5, D-6, D-7).
 
 #![cfg(feature = "std")]
 #![allow(
@@ -66,8 +67,8 @@ fn every_mode_ends_with_both_reports_on_loopback() {
                     }
                 }
                 match length {
-                    // 51200 bytes take 100 ms at the rate. A client whose close did not reach the server would
-                    // wait 2 s for the server to close (P-1).
+                    // 51200 bytes take 100 ms at the rate. When the client's close does not reach the server, the
+                    // client waits 2 s for the server to close (P-1).
                     Length::Bytes(count) => {
                         let end = if transport == Transport::Udp { 512 } else { 0 };
                         assert_eq!(sender.bytes, count + end, "{case}");
@@ -146,7 +147,9 @@ fn a_tcp_server_closes_a_second_connection_while_a_test_runs() {
     }
 }
 
-/// The first datagram of a UDP test with `num_threads` streams, which a server refuses unless it is 1 (P-13).
+/// The first datagram of a UDP test with `num_threads` streams.
+///
+/// A server refuses the datagram when `num_threads` is not 1 (P-13).
 fn first_datagram(num_threads: u32) -> Vec<u8> {
     let mut datagram = vec![0; 512];
     Prefix {
@@ -200,8 +203,8 @@ fn a_udp_server_ignores_datagrams_from_another_peer_during_a_test() {
 fn a_udp_server_drops_a_refused_flow_and_serves_the_next_test() {
     let socket = UdpSocket::bind("127.0.0.1:0").unwrap();
     let address = socket.local_addr().unwrap();
-    // The refused flow sends on. The first server takes only its first datagram. Were the rest passed to the
-    // second server, they would end that test as refused before the client's first datagram arrives.
+    // The refused flow continues to send. The first server takes only its first datagram. If the driver passes
+    // the rest to the second server, they end that test as refused before the client's first datagram arrives.
     let refused = UdpSocket::bind("127.0.0.1:0").unwrap();
     for _ in 0..6 {
         refused.send_to(&first_datagram(2), address).unwrap();
@@ -379,7 +382,7 @@ fn a_server_refuses_settings_that_do_not_match_its_socket() {
 /// Each `run_one` of a server with a start timeout: its test, or the kind of its error, and how long it took.
 type Timed = Vec<(Result<End, ErrorKind>, Duration)>;
 
-/// Runs a test in a row on a server of `transport` for each of `timeouts`, with that start timeout.
+/// Runs one test for each of `timeouts` in a row, on one server of `transport`, with that start timeout.
 fn serve_with_start_timeout(
     transport: Transport,
     timeouts: Vec<Duration>,
@@ -493,7 +496,7 @@ fn old_ends_do_not_hold_off_a_udp_start_timeout() {
     let (address, ends) = serve_with_start_timeout(Transport::Udp, vec![timeout]);
     let stray = UdpSocket::bind("127.0.0.1:0").unwrap();
     let started = Instant::now();
-    // A deadline that each datagram moved would end 300 ms after the last one, at about 1.3 s.
+    // If each datagram moves the deadline, the start timeout ends 300 ms after the last datagram, at about 1.3 s.
     while started.elapsed() < Duration::from_secs(1) {
         stray.send_to(&old_end(), address).unwrap();
         thread::sleep(Duration::from_millis(20));

@@ -11,9 +11,9 @@
 //! - The final report holds the mean of the running jitter values.
 //!
 //! Jitter is kept in integer nanoseconds rather than the stock `double` seconds, so a board without an FPU does
-//! not pay for soft floats on every datagram. The last transit time carries across interval reports, as in RFC
+//! not pay for soft floats on every datagram. The last transit time stays across interval reports, as in RFC
 //! 1889. A stock server copies its transit statistics at each interval, so the first jitter update of an
-//! interval can differ from ours. The counts do not depend on it.
+//! interval can differ between the two. The counts do not depend on it.
 //!
 //! See <https://sourceforge.net/p/iperf2/code/ci/74d4b55321b9e7827c6567f3e48ae024ba3417c8/tree/src/Reporter.c#l1406>
 //! and <https://sourceforge.net/p/iperf2/code/ci/74d4b55321b9e7827c6567f3e48ae024ba3417c8/tree/src/Reporter.c#l887>.
@@ -52,8 +52,8 @@ struct Totals {
 
 impl UdpReceiver {
     /// Counts one datagram of `len` bytes with packet ID `id`, sent at `sent` on the sender's clock and received
-    /// at `now_us` on ours. An ID of 0 or below is not counted. The caller passes the end of the test with its ID
-    /// made positive, so it counts as the last datagram (W-3).
+    /// at `now_us` on the receiver's clock. An ID of 0 or below is not counted. The caller passes the end of the
+    /// test with its ID made positive, so it counts as the last datagram (W-3).
     pub(crate) fn datagram(&mut self, id: i64, sent: Timestamp, now_us: u64, len: usize) {
         let Ok(id) = u64::try_from(id) else {
             return;

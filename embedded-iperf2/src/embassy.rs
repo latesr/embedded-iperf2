@@ -4,18 +4,23 @@
 //! until the test ends. The caller's socket holds the stack and every buffer. The time is the microseconds since
 //! the call began, from [`embassy_time::Instant`] (D-5). Each report goes to `on_report` as the core returns it.
 //!
-//! Each turn of the loop first takes what has arrived without waiting, then polls. A wait reads until something
-//! arrives or the core's deadline passes. embassy-net reports the peer's FIN as `ConnectionReset`, as it reports a
-//! RST, so both reach the core as a close. A TCP write waits at most 100 ms, so a full send buffer does not stop
-//! the reads. On a board, that is also the longest the driver takes to see a close while it writes. The read
-//! without waiting leaves a waker on the socket that does nothing. A UDP send waits at most 1 s for room, and then
-//! ends the run with `SendTimedOut`. A TCP connection waits at most 5 s.
+//! Each turn of the loop first takes what has arrived without a wait, then polls. The read without a wait leaves
+//! a waker on the socket that does nothing. embassy-net reports the peer's FIN as `ConnectionReset`, as it reports
+//! a RST, so both reach the core as a close. Each wait has a limit:
+//!
+//! - A read waits until something arrives or the core's deadline passes.
+//! - A TCP write waits at most 100 ms, so a full send buffer does not stop the reads. On a board, this is also the
+//!   longest time that the driver takes to see a close while it writes.
+//! - A UDP send waits at most 1 s for space, then ends the run with `SendTimedOut`.
+//! - A TCP connection waits at most 5 s.
 //!
 //! After a UDP test that did not fail, the driver waits up to 1 s for the stack to send the datagrams left in the
 //! socket.
-//! After a TCP test, the driver closes the socket. It waits up to 1 s for the peer's FIN, and up to 1 s for its own
-//! FIN to be acknowledged. When it closed first, it waits 20 ms more, so the stack sends its last ACK. It
-//! aborts the connection only when it is still open. The caller can then use the socket again, or drop it.
+//!
+//! After a TCP test, the driver closes the socket. It waits up to 1 s for the peer's FIN, and up to 1 s for the
+//! acknowledgement of its own FIN. When it closed first, it waits 20 ms more, so the stack sends its last ACK. It
+//! aborts the connection only when the connection is still open. The caller can then use the socket again, or
+//! drop it.
 //!
 //! While a test runs, the server's socket holds the connection and nothing listens on the port, so the stack
 //! answers a second connection with a RST (P-14). The driver uses IPv4 (D-4).
@@ -30,16 +35,16 @@ use embassy_net::tcp::{AcceptError, ConnectError, State, TcpSocket};
 use embassy_net::udp::{SendError, UdpSocket};
 use embassy_time::{Duration, Instant, Timer};
 
-/// The longest a TCP write waits for room in the send buffer.
+/// The longest time that a TCP write waits for space in the send buffer.
 const LONGEST_WRITE: Duration = Duration::from_millis(100);
-/// The longest a UDP send waits for room in the send buffer. The core counts the end of a UDP test by its sends,
-/// so a send that never leaves would hold the test for ever.
+/// The longest time that a UDP send waits for space in the send buffer. The core counts the end of a UDP test by
+/// its sends, so a send that never leaves would hold the test for ever.
 const SEND_TIMEOUT: Duration = Duration::from_secs(1);
-/// The longest a wait sleeps once the peer has closed, before the loop turns again.
+/// The longest time that a wait sleeps once the peer has closed, before the loop turns again.
 const LONGEST_SLEEP: Duration = Duration::from_millis(100);
-/// The longest a client waits for a TCP connection.
+/// The longest time that a client waits for a TCP connection.
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
-/// The longest each step of a TCP close waits for the peer.
+/// The longest time that each step of a TCP close waits for the peer.
 const CLOSE_TIMEOUT: Duration = Duration::from_secs(1);
 /// How long a socket in TIME-WAIT stays with the stack, so the stack sends the ACK of the peer's FIN. smoltcp
 /// delays an ACK by 10 ms, and embassy-net 0.9.1 cannot turn the delay off. A socket that the caller drops, or
@@ -56,7 +61,7 @@ pub enum Error {
     Accept(AcceptError),
     /// A UDP datagram could not be sent.
     Send(SendError),
-    /// The socket's send buffer had no room for 1 s, so the link is down or the stack is stuck.
+    /// The socket's send buffer did not have space for 1 s, so the link is down or the stack is stuck.
     SendTimedOut,
     /// The socket or the settings do not fit the test. The function that returns it names each case.
     Mismatch,
@@ -96,9 +101,14 @@ pub async fn run_tcp_client(
 /// Runs the UDP test of `client` against `server` over `socket`, which the caller has bound, and returns how the
 /// test ended. `on_report` receives each interval and the final report.
 ///
-/// The driver passes the client only the datagrams from `server`. Returns `Mismatch` when `client` is not a UDP
-/// client, when `socket` is not bound, or when its send buffer cannot hold one datagram. Returns `Send` when a
-/// datagram cannot be sent, and `SendTimedOut` when the send buffer has no room for 1 s.
+/// The driver passes the client only the datagrams from `server`.
+///
+/// # Errors
+///
+/// - `Mismatch` when `client` is not a UDP client, when `socket` is not bound, or when its send buffer cannot hold
+///   one datagram.
+/// - `Send` when a datagram cannot be sent.
+/// - `SendTimedOut` when the send buffer does not have space for 1 s.
 pub async fn run_udp_client(
     client: &mut Client<'_>,
     socket: &mut UdpSocket<'_>,
@@ -132,13 +142,13 @@ pub struct TcpServer<'s> {
 }
 
 impl<'s> TcpServer<'s> {
-    /// A server that accepts tests on `port` with `socket`, which must not be connected.
+    /// Creates a new server that accepts tests on `port` with `socket`. `socket` must not be connected.
     pub fn new(socket: TcpSocket<'s>, port: u16) -> Self {
         Self { socket, port }
     }
 
-    /// Waits for a connection and runs the test of `server` on it, and returns how the test ended. The stack
-    /// refuses each other connection while the test runs (P-14).
+    /// Waits for a connection, runs the test of `server` on it, and returns how the test ended. The stack refuses
+    /// each other connection while the test runs (P-14).
     ///
     /// Returns `Mismatch` when `server` is not a TCP server, and `Accept` when the socket cannot accept.
     pub async fn run_one(
@@ -166,11 +176,16 @@ impl<'s> TcpServer<'s> {
 
 /// A UDP server that runs one test at a time on one bound socket.
 ///
-/// A test belongs to the address and port of the datagram that started it, and the server ignores other
-/// datagrams until the test ends. Until a test starts, it takes datagrams from any address, so a late repeat of an
-/// old test's end does not take the server. Another address's datagram during the wait after the report ends the
-/// test, and the server keeps it in its stash as the next test's first. After a refused test, the server drops
-/// the later datagrams of that address and port, until another address and port is refused (D-6).
+/// The rules for each datagram are those of D-6:
+///
+/// - A test belongs to the address and port of the datagram that started it. The server ignores other datagrams
+///   until the test ends.
+/// - Until a test starts, the server takes datagrams from any address, so a late repeat of an old test's end does
+///   not take the server.
+/// - A datagram from another address during the wait after the report ends the test. The server keeps it in its
+///   stash as the first datagram of the next test.
+/// - After a refused test, the server drops the later datagrams of that address and port, until another address
+///   and port is refused.
 pub struct UdpServer<'s> {
     socket: UdpSocket<'s>,
     refused: Option<IpEndpoint>,
@@ -186,7 +201,7 @@ struct Kept {
 }
 
 impl<'s> UdpServer<'s> {
-    /// A server on `socket`, which the caller has bound.
+    /// Creates a new server on `socket`, which the caller has bound.
     ///
     /// `stash` holds the first datagram of a test that starts while the last test waits after its report, until
     /// the next `run_one` (D-6). It must hold the client's datagram length, 1470 bytes by default. The server
@@ -200,11 +215,14 @@ impl<'s> UdpServer<'s> {
         }
     }
 
-    /// Waits for the first datagram of a test and runs the test of `server`, and returns how the test ended.
+    /// Waits for the first datagram of a test, runs the test of `server`, and returns how the test ended.
     ///
-    /// Returns `Mismatch` when `server` is not a UDP server, when its `ipv6` is set, or when the socket is not
-    /// bound. Returns `Send` when a datagram cannot be sent, such as a reverse test's datagram that is longer than
-    /// the socket's send buffer. Returns `SendTimedOut` when the send buffer has no room for 1 s.
+    /// # Errors
+    ///
+    /// - `Mismatch` when `server` is not a UDP server, when its `ipv6` is set, or when the socket is not bound.
+    /// - `Send` when a datagram cannot be sent, such as a reverse test's datagram that is longer than the socket's
+    ///   send buffer.
+    /// - `SendTimedOut` when the send buffer does not have space for 1 s.
     pub async fn run_one(
         &mut self,
         server: &mut Server<'_>,
@@ -250,7 +268,7 @@ enum Written {
 
 /// A connection or a socket, as the loop sees it.
 trait Link {
-    /// Waits for bytes, a datagram or the peer's close, and passes it to `machine`. Returns whether the peer
+    /// Waits for bytes, a datagram, or the peer's close, and passes it to `machine`. Returns whether the peer
     /// closed.
     async fn read(&mut self, machine: &mut impl Machine, clock: &Clock) -> bool;
     async fn write(&mut self, bytes: &[u8]) -> Result<Written, Error>;
@@ -314,7 +332,8 @@ async fn run(
 }
 
 /// Closes `socket` after a test, so that it can connect or accept again. A clean close leaves it in TIME-WAIT,
-/// from which it can. A peer that does not finish its side of the close within the limit gets a RST instead.
+/// and a socket in TIME-WAIT can connect or accept again. A peer that does not finish its side of the close
+/// within the limit gets a RST instead.
 async fn end(socket: &mut TcpSocket<'_>) {
     socket.close();
     let drain = async { while socket.read_with(|bytes| (bytes.len(), ())).await.is_ok() {} };
@@ -323,7 +342,7 @@ async fn end(socket: &mut TcpSocket<'_>) {
     if socket.state() == State::TimeWait {
         Timer::after(DELAYED_ACK_WAIT).await;
     } else {
-        // A socket that closed cleanly from LAST-ACK has no peer left, so the abort sends nothing.
+        // A socket that closed cleanly from LAST-ACK does not have a peer left, so the abort sends nothing.
         socket.abort();
         let _ = select(socket.flush(), Timer::after(CLOSE_TIMEOUT)).await;
     }
@@ -372,9 +391,10 @@ struct UdpLink<'l, 's> {
     /// The address and port of the test: the server for a client, and the sender of the first datagram for a
     /// server.
     peer: Option<IpEndpoint>,
-    /// The address and port of the last refused flow, whose datagrams a server drops.
+    /// The address and port of the last refused flow. A server drops the datagrams of this flow.
     refused: Option<IpEndpoint>,
-    /// Where a server keeps another flow's datagram that ended its test, for the next test. A client's is empty.
+    /// Where a server keeps another flow's datagram that ended its test, for the next test. A client's stash is
+    /// empty.
     stash: &'l mut [u8],
     kept: Option<Kept>,
     /// Whether another flow's datagram ended the test, so the link reads nothing more.

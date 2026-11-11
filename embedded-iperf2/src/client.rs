@@ -8,8 +8,8 @@ use crate::report::Report;
 use crate::stream::{BurstReader, Content, Next, Stop, TcpSender};
 use crate::wire::{Amount, PREFIX_LEN, Prefix, ServerReport, TEST_HEADER_LEN, TestHeader, flags};
 
-/// The longest a TCP client waits for the server to close after it shuts down its write side, unless the test
-/// lasted longer (P-1).
+/// The shortest limit on a TCP client's wait for the server's close, after the client shuts down its write side.
+/// A test that lasted longer waits for its duration instead (P-1).
 const CLOSE_WAIT_US: u64 = 2 * SECOND_US;
 /// The time a reverse test's receiver waits after the test's duration (P-22).
 const GRACE_US: u64 = 2 * SECOND_US;
@@ -22,11 +22,14 @@ const ASK_EVERY_US: u64 = SECOND_US;
 const NO_DATA_US: u64 = 10 * SECOND_US;
 /// The shortest datagram that starts a test at a server, and so at a reverse test's client (P-11, P-22).
 const MIN_FIRST_DATAGRAM: usize = 40;
-/// The version a 2.2.2 client writes.
+/// The version that a 2.2.2 client writes.
 const VERSION_U: u32 = 0x0002_0002;
 const VERSION_L: u32 = 0x0002_0003;
 
-/// The client of one test. The caller passes the time in as `now_us`, and moves the bytes that `poll` asks for.
+/// The client of one test.
+///
+/// The caller passes the time in as `now_us`, and moves the bytes that `poll` asks for. The caller must call
+/// `poll` until it returns [`Action::Done`]. A client runs one test, so the next test needs a new client.
 #[derive(Debug)]
 pub struct Client<'b> {
     config: Config,
@@ -37,7 +40,7 @@ pub struct Client<'b> {
     now_us: u64,
     /// An interval that ended before bytes that arrived after it, for the next `poll`.
     pending: Option<Report>,
-    /// Once the test has ended: the last part of an interval, the final report and the outcome.
+    /// Once the test has ended: the last part of an interval, the final report, and the outcome.
     tail: Option<Report>,
     last: Option<Report>,
     outcome: Option<Result<(), TestError>>,
@@ -57,7 +60,7 @@ enum State {
     },
     /// A reverse TCP test sends its header.
     TcpAsking(TcpSender),
-    /// A reverse TCP test receives, until the server closes, the byte count or the deadline.
+    /// A reverse TCP test receives until the server closes, the byte count arrives, or the deadline passes.
     TcpReceiving {
         reader: BurstReader,
         until_us: Option<u64>,
@@ -87,7 +90,7 @@ enum State {
 }
 
 impl<'b> Client<'b> {
-    /// A client of the test `config`, which builds each chunk or datagram in `buffer`.
+    /// Creates a new client of the test `config`, which builds each chunk or datagram in `buffer`.
     ///
     /// Returns `BufLenTooLong` when a UDP datagram of `buf_len` bytes does not fit in `buffer`, and
     /// `BufLenTooShort` when it cannot hold the prefix and the test header, or `buffer` is empty.
@@ -142,7 +145,7 @@ impl<'b> Client<'b> {
         })
     }
 
-    /// The settings this client was made with.
+    /// The settings that this client was made with.
     pub fn config(&self) -> Config {
         self.config
     }
@@ -313,7 +316,7 @@ impl<'b> Client<'b> {
             State::TcpSending(sender) => sender.sent(count),
             State::TcpAsking(sender) => {
                 sender.sent(count);
-                // The server answers the last byte of the header with data, which may arrive before the next poll.
+                // The server answers the last byte of the header with data, which can arrive before the next poll.
                 if sender.sent_bytes() >= TEST_HEADER_LEN as u64 {
                     self.receive_bursts();
                 }
@@ -501,7 +504,7 @@ fn test_header(config: &Config) -> TestHeader {
     let reverse = match (config.transport, config.reverse) {
         (_, false) => 0,
         (Transport::Tcp, true) => flags::VERSION2,
-        // A stock client adds VERSION1 to a reverse UDP test when it sets -l, which ours always does (W-5).
+        // A stock client adds VERSION1 to a reverse UDP test when it sets -l, and this client always sets it (W-5).
         (Transport::Udp, true) => flags::VERSION2 | flags::UDPTESTS | flags::VERSION1,
     };
     TestHeader {

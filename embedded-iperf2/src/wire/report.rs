@@ -5,7 +5,7 @@ use super::{
 /// The length of the server report, prefix included.
 pub const SERVER_REPORT_LEN: usize = 128;
 
-/// The `flags` our server writes: `VERSION1` and `SEQNO64B`, without `EXTEND`, so a client does not read the
+/// The `flags` that the server writes: `VERSION1` and `SEQNO64B`, without `EXTEND`, so a client does not read the
 /// transit statistics.
 const REPORT_FLAGS: u32 = flags::VERSION1 | flags::SEQNO64B;
 
@@ -31,7 +31,7 @@ impl ServerReport {
     /// the counts are read only when `flags` has `SEQNO64B`, as a stock client does.
     ///
     /// Returns `Incomplete` when `input` is shorter than [`SERVER_REPORT_LEN`]. Returns `Invalid` when `flags`
-    /// lacks `VERSION1`, as the client datagram that a stock server echoes does.
+    /// does not have `VERSION1` set. A stock server's later replies echo a client datagram without it.
     pub fn parse(input: &[u8]) -> Result<Self, Error> {
         let bytes = take::<SERVER_REPORT_LEN>(input)?;
         let report_flags = get_u32(bytes, 16);

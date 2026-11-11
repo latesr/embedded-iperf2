@@ -1,5 +1,5 @@
-//! Runs our client and our server through the `std` driver on loopback, each on its own thread, for the tests
-//! of the driver.
+//! Runs the crate's client and the crate's server through the `std` driver on loopback, for the tests of the
+//! driver. Each end runs on its own thread.
 
 // Each test file compiles this module on its own and uses only part of it.
 #![allow(dead_code)]
@@ -11,8 +11,8 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
 
-/// The longest any end of a test may take. A driver that never ends fails its test after this, rather than hang
-/// it.
+/// The longest time that any end of a test can take. A driver that never ends fails its test after this time,
+/// and does not hang the test.
 const PATIENCE: Duration = Duration::from_secs(10);
 
 /// Every report an end gave, and how its test ended.
@@ -40,7 +40,7 @@ impl End {
 pub struct Pending<T>(mpsc::Receiver<T>);
 
 impl<T> Pending<T> {
-    /// The result, or a panic when the work takes longer than `PATIENCE` or panicked.
+    /// The result of the work. Panics when the work takes longer than `PATIENCE`, or when the work panics.
     pub fn get(self) -> T {
         self.0
             .recv_timeout(PATIENCE)
@@ -65,7 +65,7 @@ pub fn server_config(transport: Transport) -> ServerConfig {
     }
 }
 
-/// Starts our server for one test on loopback, over IPv6 when `config` says so, and returns its address.
+/// Starts the crate's server for one test on loopback, over IPv6 when `config` says so, and returns its address.
 pub fn serve(config: ServerConfig) -> (SocketAddr, Pending<End>) {
     let host = if config.ipv6 {
         "[::1]:0"
@@ -106,7 +106,7 @@ pub fn serve(config: ServerConfig) -> (SocketAddr, Pending<End>) {
     }
 }
 
-/// Starts our client of `config` against `server`.
+/// Starts the crate's client of `config` against `server`.
 pub fn start(config: Config, server: SocketAddr) -> Pending<End> {
     spawn(move || {
         let mut buffer = vec![0; 4096];
@@ -117,7 +117,7 @@ pub fn start(config: Config, server: SocketAddr) -> Pending<End> {
     })
 }
 
-/// Runs our client of `config` against `server` to its end.
+/// Runs the crate's client of `config` against `server` to its end.
 pub fn run(config: Config, server: SocketAddr) -> End {
     start(config, server).get()
 }

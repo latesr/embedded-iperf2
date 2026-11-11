@@ -5,7 +5,7 @@ use super::{
 /// The length of the test header after any prefix: `client_hdr_v1` and `client_hdrext`.
 pub const TEST_HEADER_LEN: usize = 64;
 
-/// The longest header length that `flags` may state.
+/// The longest header length that `flags` can state.
 const MAX_STATED_LEN: usize = 256;
 
 /// The longest duration `mAmount` holds: its negation must keep the top bit set.
@@ -102,10 +102,10 @@ impl TestHeader {
         Ok(TEST_HEADER_LEN)
     }
 
-    /// Whether the header asks for a reverse test: `VERSION2` in `flags` and `REVERSE` in `upperflags`.
+    /// Returns whether the header asks for a reverse test: `VERSION2` in `flags` and `REVERSE` in `upperflags`.
     ///
-    /// It does not check `EXTEND`. A stock server reads `upperflags` only with `EXTEND`, which every 2.2.2 client
-    /// sets, so a caller that must match the stock server checks `EXTEND` too.
+    /// It does not check `EXTEND`. A stock server reads `upperflags` only with `EXTEND`, and every 2.2.2 client
+    /// sets it. A caller that must match the stock server checks `EXTEND` too.
     pub fn is_reverse(&self) -> bool {
         self.flags & flags::VERSION2 != 0 && self.upper_flags & flags::REVERSE != 0
     }
@@ -114,10 +114,10 @@ impl TestHeader {
 /// The header length that `flags` states (W-7), counted from the start of the stream for TCP and of the datagram
 /// for UDP, so a UDP length includes the prefix.
 ///
-/// Returns `None` when `flags` has none of `VERSION1`, `VERSION2` and `EXTEND`, so the stream has no test header.
-/// Returns `None` for UDP when `flags` is [`UDP_COMPAT_FILL`](flags::UDP_COMPAT_FILL), as a stock server does
-/// before it reads the bits (P-11). Returns `Invalid` for a length above 256, or below the 64 bytes of a TCP
-/// header or the 80 of a UDP one.
+/// Returns `None` when `flags` does not have `VERSION1`, `VERSION2`, or `EXTEND` set, because the stream then does
+/// not have a test header. Returns `None` for UDP when `flags` is [`UDP_COMPAT_FILL`](flags::UDP_COMPAT_FILL), as a
+/// stock server does before it reads the bits (P-11). Returns `Invalid` for a length above 256, or below the 64
+/// bytes of a TCP header or the 80 bytes of a UDP header.
 pub fn header_length(flags: u32, udp: bool) -> Result<Option<usize>, Error> {
     if udp && flags == flags::UDP_COMPAT_FILL {
         return Ok(None);

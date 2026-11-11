@@ -11,31 +11,34 @@ use crate::wire::{
     TestHeader, flags, header_length,
 };
 
-/// The longest header a client may state (W-7).
+/// The longest header that a client can state (W-7).
 const MAX_HEADER_LEN: usize = 256;
 /// The shortest first datagram of a UDP test (P-11).
 const MIN_FIRST_DATAGRAM: usize = 40;
-/// The longest datagram a reverse UDP test sends, over IPv4 and IPv6 (P-21).
+/// The longest datagram that a reverse UDP test sends, over IPv4 and over IPv6 (P-21).
 const MAX_DATAGRAM_IPV4: usize = 1470;
 const MAX_DATAGRAM_IPV6: usize = 1450;
 /// The default length of a reverse TCP burst (P-16).
 const DEFAULT_BURST: u32 = 131_072;
-/// The smallest `mBufLen` a stock server ignores, one above the 16 MiB it takes.
+/// The smallest `mBufLen` that a stock server ignores, one above the 16 MiB that it takes.
 const TOO_LONG_BUF_LEN: u32 = 16 * 1024 * 1024 + 1;
 /// The silence after a server report that ends a UDP test, and the most reports sent (P-12).
 const REPORT_WAIT_US: u64 = 250_000;
 const REPORT_SENDS: u32 = 9;
-/// The version a 2.2.2 server writes in its ack.
+/// The version that a 2.2.2 server writes in its ack.
 const VERSION: HeaderAck = HeaderAck {
     version_u: 0x0002_0002,
     version_l: 0x0002_0003,
 };
 
-/// The server of one test. The caller makes a new one for each TCP connection, or for each UDP flow, and
-/// passes the time in as `now_us`.
+/// The server of one test.
 ///
-/// A UDP server serves one peer. The caller passes it the datagrams of the address that sent the first one it
-/// passed, and no others (D-6).
+/// The caller makes a new server for each TCP connection or UDP flow, and passes the time in as `now_us`. The
+/// caller must call `poll` until it returns [`Action::Done`].
+///
+/// A UDP server serves one peer. While [`Server::waits_for_first`] returns true, the caller passes it the
+/// datagrams of every address. After that, the caller passes only the datagrams of the address that started or
+/// refused the test (D-6).
 #[derive(Debug)]
 pub struct Server<'b> {
     config: ServerConfig,
@@ -45,7 +48,7 @@ pub struct Server<'b> {
     now_us: u64,
     /// An interval that ended before bytes that arrived after it, for the next `poll`.
     pending: Option<Report>,
-    /// Once the test has ended: the last part of an interval, the final report and the outcome.
+    /// Once the test has ended: the last part of an interval, the final report, and the outcome.
     tail: Option<Report>,
     last: Option<Report>,
     outcome: Option<Result<(), TestError>>,
@@ -104,10 +107,10 @@ enum State {
 }
 
 impl<'b> Server<'b> {
-    /// A server for one test, which builds each chunk or datagram it sends in `buffer`.
+    /// Creates a new server for one test, which builds each chunk or datagram that it sends in `buffer`.
     ///
-    /// Returns `BufLenTooShort` when `buffer` cannot hold a burst header, or a UDP datagram of the longest length
-    /// a reverse UDP test sends: 1470 bytes, or 1450 over IPv6 (P-21).
+    /// Returns `BufLenTooShort` when `buffer` cannot hold a burst header, or the longest datagram that a reverse
+    /// UDP test sends: 1470 bytes, or 1450 bytes over IPv6 (P-21).
     pub fn new(config: ServerConfig, buffer: &'b mut [u8]) -> Result<Self, ConfigError> {
         let shortest = match (config.transport, config.ipv6) {
             (Transport::Tcp, _) => BURST_HEADER_LEN,
@@ -138,7 +141,7 @@ impl<'b> Server<'b> {
         })
     }
 
-    /// The settings this server was made with.
+    /// The settings that this server was made with.
     pub fn config(&self) -> ServerConfig {
         self.config
     }
@@ -354,9 +357,8 @@ impl<'b> Server<'b> {
         }
     }
 
-    /// Whether a UDP server waits for the datagram that starts its test. Until then the caller passes it the
-    /// datagrams of every address, and the first datagram that starts or refuses a test fixes the address
-    /// (D-6).
+    /// Returns whether a UDP server waits for the datagram that starts its test. Until then, the caller passes it
+    /// the datagrams of every address. The first datagram that starts or refuses a test fixes the address (D-6).
     pub fn waits_for_first(&self) -> bool {
         matches!(self.state, State::UdpWaiting)
     }
@@ -364,8 +366,8 @@ impl<'b> Server<'b> {
     /// Records that a datagram from another address and port arrived. Returns whether the test ended for it,
     /// so that the caller keeps the datagram as the first datagram of the next test (P-12, P-14).
     pub fn another_flow_arrived(&mut self) -> bool {
-        // Before the first report is out, the old client has had nothing, so it keeps the server. A report owed
-        // for an end that just arrived is dropped, as the old client's later ends are.
+        // Before the first report is out, the old client has not received its report, so it keeps the server. A
+        // report owed for an end that just arrived is dropped, as the old client's later ends are.
         let State::UdpReporting { report, sends, .. } = &self.state else {
             return false;
         };
@@ -384,7 +386,7 @@ impl<'b> Server<'b> {
             self.state = State::Over;
             return;
         }
-        // A client may close as soon as it has sent or received its bytes, before the ack or the last chunk is
+        // A client can close as soon as it has sent or received its bytes, before the ack or the last chunk is
         // out, so the test ends with what moved (P-10, P-16).
         self.end_tcp(now_us);
     }
@@ -637,7 +639,7 @@ fn word(bytes: &[u8], at: usize) -> Option<u32> {
     word.try_into().ok().map(u32::from_be_bytes)
 }
 
-/// Whether a test header asks for a mode outside v1 (P-13).
+/// Returns whether a test header asks for a mode outside v1 (P-13).
 fn refused(header: &TestHeader) -> bool {
     let only_version1 = header.flags & flags::VERSION1 != 0 && header.flags & flags::VERSION2 == 0;
     only_version1

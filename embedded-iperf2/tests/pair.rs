@@ -1,5 +1,7 @@
-//! Our client against our server in memory, over TCP and UDP, forward and reverse, in time and byte mode. A
-//! loop moves the bytes between them and moves a shared clock to the earliest time either waits for.
+//! Tests the crate's client against the crate's server in memory.
+//!
+//! The tests cover TCP and UDP, forward and reverse, in time and byte mode. A loop moves the bytes between the two
+//! ends. It moves a shared clock to the earliest time that either end waits for.
 
 #![allow(
     clippy::unwrap_used,

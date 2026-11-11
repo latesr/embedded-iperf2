@@ -1,5 +1,7 @@
-//! Two embassy-net stacks in one process, joined by an in-memory Ethernet link that records each frame. Our client
-//! runs on one stack and our server on the other, through the `embassy-net` driver, on the host's clock.
+//! Two embassy-net stacks in one process, joined by an in-memory Ethernet link that records each frame.
+//!
+//! The crate's client runs on one stack, and the crate's server runs on the other. Both use the `embassy-net`
+//! driver and the host's clock.
 
 // Each test file compiles this module on its own and uses only part of it.
 #![allow(dead_code)]
@@ -23,7 +25,8 @@ use std::sync::mpsc::{self, RecvTimeoutError};
 use std::task::{Context, Waker};
 use std::thread;
 
-/// The longest a test may take. A driver that never ends fails its test after this, rather than hang it.
+/// The longest time that a test can take. A driver that never ends fails its test after this time, and does not
+/// hang the test.
 const PATIENCE: std::time::Duration = std::time::Duration::from_secs(10);
 pub const CLIENT: Ipv4Address = Ipv4Address::new(10, 0, 0, 2);
 pub const SERVER: Ipv4Address = Ipv4Address::new(10, 0, 0, 1);
@@ -119,7 +122,7 @@ impl Driver for End {
     }
 }
 
-/// The two stacks, and the frames the link carried.
+/// The two stacks, and the frames sent over the link.
 pub struct Net<'a> {
     pub client: Stack<'a>,
     pub server: Stack<'a>,
@@ -127,7 +130,7 @@ pub struct Net<'a> {
 }
 
 impl Net<'_> {
-    /// The TCP flags of each frame the link carried to or from the server's `PORT`, with the side that sent it:
+    /// The TCP flags of each frame sent over the link to or from the server's `PORT`, with the side that sent it:
     /// 0 is the client's.
     pub fn tcp_flags(&self) -> Vec<(usize, u8)> {
         self.wire
@@ -160,9 +163,9 @@ fn stack_config(address: Ipv4Address) -> NetConfig {
 /// Runs `test` with the two stacks, while both stacks run beside it. Panics when `test` panics, or takes longer
 /// than `PATIENCE`.
 ///
-/// The stacks and the test run on a thread of their own, and this thread watches the clock. A driver that loops
+/// The stacks and the test run on a thread of their own. The calling thread watches the clock. A driver that loops
 /// without yielding stops the executor and its timers, so only another thread can see that it never ends. After a
-/// timeout that thread runs on until the test process ends.
+/// timeout, the thread of the stacks continues to run until the test process ends.
 pub fn run<T: Send + 'static>(test: impl AsyncFnOnce(&Net<'_>) -> T + Send + 'static) -> T {
     let (sender, receiver) = mpsc::channel();
     thread::spawn(move || {
@@ -301,7 +304,7 @@ impl UdpBuffers {
     }
 }
 
-/// Runs one test of `server` on `driver`.
+/// Runs one test of a server of `config` on `driver`.
 pub async fn tcp_once(driver: &mut TcpServer<'_>, config: ServerConfig) -> Ended {
     let mut buffer = vec![0; 4096];
     let mut server = Server::new(config, &mut buffer).unwrap();
@@ -312,7 +315,7 @@ pub async fn tcp_once(driver: &mut TcpServer<'_>, config: ServerConfig) -> Ended
     Ended { reports, outcome }
 }
 
-/// Runs one test of `server` on `driver`.
+/// Runs one test of a server of `config` on `driver`.
 pub async fn udp_once(driver: &mut UdpServer<'_>, config: ServerConfig) -> Ended {
     let mut buffer = vec![0; 4096];
     let mut server = Server::new(config, &mut buffer).unwrap();
@@ -323,7 +326,7 @@ pub async fn udp_once(driver: &mut UdpServer<'_>, config: ServerConfig) -> Ended
     Ended { reports, outcome }
 }
 
-/// Runs our server for one test on the server's stack, on a socket of its own.
+/// Runs the crate's server for one test on the server's stack, on a socket of its own.
 pub async fn serve(net: &Net<'_>, config: ServerConfig) -> Ended {
     match config.transport {
         Transport::Tcp => {
@@ -340,7 +343,7 @@ pub async fn serve(net: &Net<'_>, config: ServerConfig) -> Ended {
     }
 }
 
-/// Runs our client of `config` over a TCP `socket` against the server.
+/// Runs the crate's client of `config` over a TCP `socket` against the server.
 pub async fn tcp_client(socket: &mut TcpSocket<'_>, config: Config) -> Ended {
     let mut buffer = vec![0; 4096];
     let mut client = Client::new(config, &mut buffer).unwrap();
@@ -352,7 +355,7 @@ pub async fn tcp_client(socket: &mut TcpSocket<'_>, config: Config) -> Ended {
     Ended { reports, outcome }
 }
 
-/// Runs our client of `config` over a UDP `socket` against the server.
+/// Runs the crate's client of `config` over a UDP `socket` against the server.
 pub async fn udp_client(socket: &mut UdpSocket<'_>, config: Config) -> Ended {
     let mut buffer = vec![0; 4096];
     let mut client = Client::new(config, &mut buffer).unwrap();
@@ -364,7 +367,7 @@ pub async fn udp_client(socket: &mut UdpSocket<'_>, config: Config) -> Ended {
     Ended { reports, outcome }
 }
 
-/// Runs our client of `config` on the client's stack, on a socket of its own.
+/// Runs the crate's client of `config` on the client's stack, on a socket of its own.
 pub async fn client(net: &Net<'_>, config: Config) -> Ended {
     match config.transport {
         Transport::Tcp => {

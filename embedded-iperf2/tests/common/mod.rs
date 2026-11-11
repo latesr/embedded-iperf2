@@ -1,12 +1,12 @@
 //! Reads the recorded samples. The rustdoc of `xtask/src/record/sample.rs` states the layout: each record is a
-//! direction byte, a 32-bit big-endian length and that many bytes.
+//! direction byte, a 32-bit big-endian length, and that many bytes.
 
 // Each test file compiles this module on its own and uses only part of it.
 #![allow(dead_code)]
 
 use std::path::PathBuf;
 
-/// The bytes one side sent, in the order the relay saw them.
+/// The bytes that each side sent, in the order the relay saw them.
 pub struct Sample {
     /// Each record from the client to the server. A UDP record is one datagram.
     pub client: Vec<Vec<u8>>,

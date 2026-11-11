@@ -8,7 +8,7 @@ use crate::wire::{PREFIX_LEN, Prefix, TEST_HEADER_LEN, TestHeader};
 #[derive(Debug)]
 pub(crate) struct UdpSender {
     len: usize,
-    /// The test header a client puts in every datagram. A server's datagrams have none (P-21).
+    /// The test header that a client puts in every datagram. A server's datagrams do not have one (P-21).
     header: Option<TestHeader>,
     stop: Stop,
     /// The nanoseconds between datagrams at the rate, or 0 for no pacing.
@@ -18,14 +18,14 @@ pub(crate) struct UdpSender {
     next_id: i64,
     sent_bytes: u64,
     start_us: Option<u64>,
-    /// Whether the buffer holds the fill. The sender fills it once and then rewrites only the prefix and the
-    /// header, so nothing else may write the buffer while the sender sends.
+    /// Whether the buffer holds the fill. The sender fills it once, then rewrites only the prefix and the header.
+    /// Other code must not write the buffer while the sender sends.
     filled: bool,
 }
 
 impl UdpSender {
-    /// A sender of datagrams of `len` bytes at `rate` bits per second. `len` is at least the prefix, and the
-    /// header when there is one.
+    /// Creates a new sender of datagrams of `len` bytes at `rate` bits per second. `len` must be at least the
+    /// prefix, and the header when there is one.
     pub(crate) fn new(len: usize, header: Option<TestHeader>, stop: Stop, rate: u64) -> Self {
         let gap_ns = if rate == 0 {
             0

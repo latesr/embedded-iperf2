@@ -1,8 +1,8 @@
-//! The iperf 2.2.2 wire formats: the UDP prefix, the test header, the header ack, the burst header and the
+//! The iperf 2.2.2 wire formats: the UDP prefix, the test header, the header ack, the burst header, and the
 //! server report.
 //!
 //! Every field is big-endian. Each message has a fixed length. `parse` reads one message from the start of a
-//! slice, and `encode` writes one to the start of a slice and returns its length. `REQUIREMENTS.md` states each
+//! slice. `encode` writes one message to the start of a slice, and returns its length. `REQUIREMENTS.md` states each
 //! layout under W-1 to W-13.
 
 mod ack;
@@ -85,7 +85,7 @@ fn put_u16<const N: usize>(bytes: &mut [u8; N], at: usize, value: u16) {
     }
 }
 
-/// The 64-bit value whose high word is `high` and low word is `low`.
+/// The 64-bit value with `high` as its high word and `low` as its low word.
 fn join(high: u32, low: u32) -> u64 {
     (u64::from(high) << 32) | u64::from(low)
 }

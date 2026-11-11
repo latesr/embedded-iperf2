@@ -24,7 +24,7 @@ pub enum Length {
     Bytes(u64),
 }
 
-/// A client's test: what a stock client takes as `-u`, `-R`, `-t` or `-n`, `-l`, `-b`, `-i` and `-p`.
+/// A client's test: what a stock client takes as `-u`, `-R`, `-t` or `-n`, `-l`, `-b`, `-i`, and `-p`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Config {
     /// The transport, `-u` for UDP.
@@ -44,7 +44,8 @@ pub struct Config {
 }
 
 impl Config {
-    /// A TCP test with the defaults of P-7 and W-8: 10 s, bursts of 131072 bytes, no rate limit, port 5001.
+    /// Creates a new TCP test with the defaults of P-7 and W-8: 10 s, bursts of 131072 bytes, no rate limit, and
+    /// port 5001.
     pub const fn tcp() -> Self {
         Self {
             transport: Transport::Tcp,
@@ -57,7 +58,8 @@ impl Config {
         }
     }
 
-    /// A UDP test with the defaults of P-7 and W-8: 10 s, datagrams of 1470 bytes, 1048576 bit/s, port 5001.
+    /// Creates a new UDP test with the defaults of P-7 and W-8: 10 s, datagrams of 1470 bytes, 1048576 bit/s, and
+    /// port 5001.
     pub const fn udp() -> Self {
         Self {
             transport: Transport::Udp,
@@ -73,7 +75,8 @@ impl Config {
 pub struct ServerConfig {
     /// The transport the server listens on.
     pub transport: Transport,
-    /// The longest a test may last, in microseconds, whether or not its end arrives (P-15). `None` means no limit.
+    /// The longest time that a test can last, in microseconds, whether or not its end arrives (P-15). `None` means
+    /// no limit.
     pub duration_us: Option<u64>,
     /// The interval of the reports, in microseconds. `None` means a final report only.
     pub interval_us: Option<u64>,
@@ -100,7 +103,7 @@ pub enum TestError {
     Refused,
     /// The client of a reverse UDP test received no data within 10 s (P-6).
     NoData,
-    /// The peer sent bytes that break the protocol, such as a burst header shorter than itself (P-5).
+    /// The peer sent bytes that break the protocol, such as a burst header with a `burst_size` below 120 (P-5).
     Protocol,
 }
 
@@ -108,8 +111,8 @@ pub enum TestError {
 #[derive(Debug, PartialEq, Eq)]
 pub enum Action<'a> {
     /// Write these bytes: one TCP chunk, or one UDP datagram. Then call `sent` with the count written. A TCP
-    /// write may take fewer, and the rest comes back in the next `Send`. A UDP datagram that could not be sent is
-    /// not reported, and the next `poll` builds it again.
+    /// write can take fewer bytes, and the rest comes back in the next `Send`. A UDP datagram that could not be
+    /// sent is not reported, and the next `poll` builds it again.
     Send(&'a [u8]),
     /// Wait for bytes from the peer until `until_us`, then poll again. `None` means wait for bytes or a close.
     Wait {

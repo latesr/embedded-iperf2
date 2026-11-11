@@ -17,17 +17,17 @@ use std::net::{Shutdown, SocketAddr, TcpListener, TcpStream, UdpSocket};
 use std::time::{Duration, Instant};
 use std::vec;
 
-/// The longest a wait reads before the loop turns again.
+/// The longest time that a wait reads before the loop turns again.
 const LONGEST_WAIT: Duration = Duration::from_millis(100);
-/// The longest a client waits for a TCP connection. Without a limit, an address that does not answer holds the
-/// caller for the kernel's own timeout, about 75 s on macOS.
+/// The longest time that a client waits for a TCP connection. Without a limit, an address that does not answer
+/// holds the caller for the kernel's own timeout, about 75 s on macOS.
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 /// The length of the driver's receive buffer, which holds the longest UDP datagram.
 const RECEIVE_LEN: usize = 65_536;
-/// How often a server with a start timeout looks for a connection. The server's clock starts at the first bytes it
-/// reads, so a connection accepted late starts it up to this much late.
+/// How often a server with a start timeout looks for a connection. The server's clock starts at the first bytes
+/// that it reads, so a connection accepted late starts the clock up to this much late.
 const ACCEPT_POLL: Duration = Duration::from_millis(1);
-/// How many sends of one datagram in a row may fail, a millisecond apart, before the driver gives up. A host
+/// How many sends of one datagram in a row can fail, a millisecond apart, before the driver gives up. A host
 /// refuses a UDP send for a moment when its socket buffer is full.
 const UDP_SEND_TRIES: u32 = 1_000;
 
@@ -73,7 +73,7 @@ pub struct TcpServer {
 }
 
 impl TcpServer {
-    /// A server on `listener`, whose `run_one` waits for a connection without a limit.
+    /// Creates a new server on `listener`. Its `run_one` waits for a connection without a limit.
     pub fn new(listener: TcpListener) -> Self {
         Self {
             listener,
@@ -89,12 +89,14 @@ impl TcpServer {
         Ok(())
     }
 
-    /// Waits for a connection and runs the test of `server` on it, and returns how the test ended. While the
-    /// test runs, the driver closes each other connection as it arrives (P-14).
+    /// Waits for a connection, runs the test of `server` on it, and returns how the test ended. While the test
+    /// runs, the driver closes each other connection as it arrives (P-14).
     ///
-    /// Returns an error of kind `TimedOut` when no connection arrives within the start timeout, and the server
-    /// can then run another test. Returns an error of kind `InvalidInput` when `server` is not a TCP server, or
-    /// an error when a socket fails.
+    /// # Errors
+    ///
+    /// - `TimedOut` when no connection arrives within the start timeout. The server can then run another test.
+    /// - `InvalidInput` when `server` is not a TCP server.
+    /// - The socket's error when a socket fails.
     pub fn run_one(
         &mut self,
         server: &mut Server<'_>,
@@ -130,7 +132,7 @@ fn nonzero(timeout: Option<Duration>) -> io::Result<Option<Duration>> {
     Ok(timeout)
 }
 
-/// The error of a server whose test did not start within its start timeout.
+/// The error when a server's test does not start within its start timeout.
 fn not_started() -> io::Error {
     io::Error::new(
         ErrorKind::TimedOut,
@@ -138,8 +140,8 @@ fn not_started() -> io::Error {
     )
 }
 
-/// Accepts a connection on `listener`, or fails with `TimedOut` after `timeout`. std has no accept with a
-/// timeout, so the listener is polled.
+/// Accepts a connection on `listener`, or fails with `TimedOut` after `timeout`. std does not have an accept
+/// with a timeout, so the listener is polled.
 fn accept_within(listener: &TcpListener, timeout: Duration) -> io::Result<TcpStream> {
     listener.set_nonblocking(true)?;
     let start = Instant::now();
@@ -158,11 +160,16 @@ fn accept_within(listener: &TcpListener, timeout: Duration) -> io::Result<TcpStr
 
 /// A UDP server that runs one test at a time on a socket.
 ///
-/// A test belongs to the address and port of the datagram that started it, and the server ignores other
-/// datagrams until the test ends. Until a test starts, it takes datagrams from any address, so a late repeat of an
-/// old test's end does not take the server. Another address's datagram during the wait after the report ends the
-/// test and stays in the socket as the next test's first. After a refused test, the server drops the later
-/// datagrams of that address and port, until another address and port is refused (D-6).
+/// The rules for each datagram are those of D-6:
+///
+/// - A test belongs to the address and port of the datagram that started it. The server ignores other datagrams
+///   until the test ends.
+/// - Until a test starts, the server takes datagrams from any address, so a late repeat of an old test's end does
+///   not take the server.
+/// - A datagram from another address during the wait after the report ends the test. It stays in the socket as
+///   the first datagram of the next test.
+/// - After a refused test, the server drops the later datagrams of that address and port, until another address
+///   and port is refused.
 #[derive(Debug)]
 pub struct UdpServer {
     socket: UdpSocket,
@@ -171,7 +178,7 @@ pub struct UdpServer {
 }
 
 impl UdpServer {
-    /// A server on `socket`, whose `run_one` waits for a test to start without a limit.
+    /// Creates a new server on `socket`. Its `run_one` waits for a test to start without a limit.
     pub fn new(socket: UdpSocket) -> Self {
         Self {
             socket,
@@ -189,11 +196,14 @@ impl UdpServer {
         Ok(())
     }
 
-    /// Waits for the first datagram of a test and runs the test of `server`, and returns how the test ended.
+    /// Waits for the first datagram of a test, runs the test of `server`, and returns how the test ended.
     ///
-    /// Returns an error of kind `TimedOut` when no test starts within the start timeout, and the server can then
-    /// run another test. Returns an error of kind `InvalidInput` when `server` is not a UDP server, or when its
-    /// `ipv6` setting does not match the family of the socket's address. Returns an error when the socket fails.
+    /// # Errors
+    ///
+    /// - `TimedOut` when no test starts within the start timeout. The server can then run another test.
+    /// - `InvalidInput` when `server` is not a UDP server, or when its `ipv6` setting does not match the family
+    ///   of the socket's address.
+    /// - The socket's error when the socket fails.
     pub fn run_one(
         &mut self,
         server: &mut Server<'_>,
@@ -327,7 +337,7 @@ fn deliver(machine: &mut impl Machine, arrived: Arrived, buffer: &[u8], now_us: 
 
 struct TcpLink<'l> {
     stream: TcpStream,
-    /// The server's listener, whose connections the link refuses while the test runs.
+    /// The server's listener. The link refuses its connections while the test runs.
     listener: Option<&'l TcpListener>,
 }
 
@@ -345,7 +355,7 @@ impl<'l> TcpLink<'l> {
     /// Closes one connection that waits on the listener, if there is one. A failed accept does not end the test
     /// that runs.
     fn refuse_waiting(&self) {
-        // One a turn, so that clients that connect faster than the loop turns cannot stall the test. The kernel
+        // One for each turn, so that clients that connect faster than the loop turns cannot stall the test. The kernel
         // drops connections beyond its listen backlog.
         if let Some(listener) = self.listener
             && let Ok((stream, _)) = listener.accept()
@@ -394,7 +404,7 @@ struct UdpLink<'s> {
     /// The address and port of the test: the server for a client, and the sender of the first datagram for a
     /// server.
     peer: Option<SocketAddr>,
-    /// The address and port of the last refused flow, whose datagrams a server drops.
+    /// The address and port of the last refused flow. A server drops the datagrams of this flow.
     refused: Option<SocketAddr>,
     /// Whether another flow's datagram ended the test. It stays in the socket for the next test, so the link
     /// reads nothing more. The next test times it from when it reads it, not from its arrival, as a stock server
@@ -488,8 +498,8 @@ fn tcp_shutdown(result: io::Result<()>) -> io::Result<()> {
     }
 }
 
-/// The datagram a UDP read returned, or `None` when nothing arrived. An ICMP port unreachable from an earlier send
-/// reports as a reset or a refusal, because the peer may not listen yet.
+/// The datagram that a UDP read returned, or `None` when nothing arrived. An ICMP port unreachable from an earlier
+/// send reports as a reset or a refusal. The read takes it as nothing, because the peer can start to listen later.
 fn udp_read(read: io::Result<(usize, SocketAddr)>) -> io::Result<Option<(usize, SocketAddr)>> {
     match read {
         Ok(read) => Ok(Some(read)),
@@ -498,8 +508,8 @@ fn udp_read(read: io::Result<(usize, SocketAddr)>) -> io::Result<Option<(usize, 
     }
 }
 
-/// Sends a datagram of `len` bytes with `send`. A send that reports the peer gone counts as sent, because the
-/// datagram is lost as the network may lose any datagram. Any other failure is tried again a millisecond later,
+/// Sends a datagram of `len` bytes with `send`. A send that reports the peer gone counts as sent. The datagram is
+/// lost, as the network can lose any datagram. Any other failure is tried again a millisecond later,
 /// up to `UDP_SEND_TRIES` sends.
 fn udp_send(len: usize, mut send: impl FnMut() -> io::Result<usize>) -> io::Result<Written> {
     let mut tries: u32 = 0;
@@ -518,7 +528,7 @@ fn udp_send(len: usize, mut send: impl FnMut() -> io::Result<usize>) -> io::Resu
     }
 }
 
-/// Whether `error` says the peer closed or reset the connection, or is not listening.
+/// Returns whether `error` says that the peer closed or reset the connection, or is not listening.
 fn gone(error: &io::Error) -> bool {
     matches!(
         error.kind(),
@@ -529,7 +539,7 @@ fn gone(error: &io::Error) -> bool {
     )
 }
 
-/// Whether `error` says only that nothing arrived or left within the timeout.
+/// Returns whether `error` says only that nothing arrived or left within the timeout.
 fn waited(error: &io::Error) -> bool {
     matches!(error.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut)
 }

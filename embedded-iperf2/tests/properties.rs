@@ -88,7 +88,7 @@ fn server_report() -> impl Strategy<Value = ServerReport> {
     )
 }
 
-/// Encodes `value`, checks that it parses back, and that every shorter slice is `Incomplete`.
+/// Encodes `value`, then checks that it parses back and that every shorter slice is `Incomplete`.
 fn round_trip<T: PartialEq + core::fmt::Debug>(
     value: &T,
     len: usize,

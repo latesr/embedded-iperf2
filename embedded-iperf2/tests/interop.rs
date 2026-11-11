@@ -1,9 +1,11 @@
-//! T-5: the `std` driver against a stock iperf 2.2.2 on loopback. Our client runs against a stock server, and a
-//! stock client against our server, over TCP and UDP, forward and reverse, in time and byte mode.
+//! T-5: tests the `std` driver against a stock iperf 2.2.2 on loopback.
 //!
-//! Each test runs the binary that `MCU_IPERF2` names, which `cargo xtask install-iperf` builds, and fails without
-//! it. Each test's name starts with `stock_`, so that `.cargo/mutants.toml` can leave these tests out of mutation
-//! runs. The tests in `blocking.rs` cover the driver's code.
+//! The crate's client runs against a stock server, and a stock client runs against the crate's server. The tests
+//! cover TCP and UDP, forward and reverse, in time and byte mode.
+//!
+//! Each test runs the binary that `MCU_IPERF2` names, and fails without that binary. `cargo xtask install-iperf`
+//! builds the binary. Each test's name starts with `stock_`, so that `.cargo/mutants.toml` can leave these tests
+//! out of mutation runs. The tests in `blocking.rs` cover the driver's code.
 
 #![cfg(feature = "std")]
 #![allow(
@@ -24,9 +26,9 @@ use std::sync::OnceLock;
 use std::thread;
 use std::time::{Duration, Instant};
 
-/// The time a stock server gets to open its socket before our client starts.
+/// The time a stock server gets to open its socket before the crate's client starts.
 const SERVER_START: Duration = Duration::from_millis(500);
-/// The time a stock process gets to exit, after our server ends its test or after SIGINT.
+/// The time a stock process gets to exit, after the crate's server ends its test or after SIGINT.
 const EXIT_WAIT: Duration = Duration::from_secs(3);
 const RATE: u64 = 4_000_000;
 
@@ -130,8 +132,10 @@ impl Stock {
         Self(Some(child))
     }
 
-    /// Stops the process with SIGINT, so it flushes its reports, and returns what it printed. A process that is
-    /// still running `EXIT_WAIT` later is killed, and the text says so.
+    /// Stops the process with SIGINT, and returns what it printed.
+    ///
+    /// SIGINT makes the process flush its reports. A process that still runs `EXIT_WAIT` later is killed, and the
+    /// text says so.
     fn interrupt(mut self) -> String {
         let id = self.0.as_ref().unwrap().id().to_string();
         let status = Command::new("kill").args(["-INT", &id]).status().unwrap();
@@ -195,8 +199,8 @@ struct Counts {
     udp: Option<(u64, u64)>,
 }
 
-/// Reads the last report line of `output`. A TCP line has 9 fields, the bytes in the eighth. A UDP line adds the
-/// jitter, the lost datagrams, the total, the percent lost and the out-of-order datagrams.
+/// Reads the last report line of `output`. A TCP line has nine fields, and the eighth holds the bytes. A UDP line
+/// adds the jitter, the lost datagrams, the total, the percent lost, and the out-of-order datagrams.
 fn last_report(output: &str) -> Counts {
     let line = output
         .lines()
@@ -210,8 +214,8 @@ fn last_report(output: &str) -> Counts {
     }
 }
 
-/// Checks that the stock end's last report and our final report agree. Both ends count the end of a UDP test, so
-/// the bytes are equal in every mode.
+/// Checks that the stock end's last report and the crate's final report agree. Both ends count the end of a UDP
+/// test, so the bytes are equal in every mode.
 fn agree(mode: Mode, ours_sends: bool, printed: &str, ours: &Report) {
     let stock = last_report(printed);
     let case = format!("{mode:?}, ours sends {ours_sends}:\n{printed}");
@@ -220,8 +224,8 @@ fn agree(mode: Mode, ours_sends: bool, printed: &str, ours: &Report) {
         return;
     }
     if ours_sends {
-        // The stock receiver loses nothing on loopback. A forward client holds the server report, which the
-        // stock receiver wrote from its own count.
+        // The stock receiver loses nothing on loopback. A forward client holds the server report. The stock
+        // receiver writes that report from its own count.
         assert_eq!(stock.udp, Some((0, 0)), "{case}");
         if let Some(server) = ours.server {
             let reported = Counts {
@@ -231,8 +235,8 @@ fn agree(mode: Mode, ours_sends: bool, printed: &str, ours: &Report) {
             assert_eq!(stock, reported, "{case}");
         }
     } else {
-        // A stock sender's line always holds 0 lost and 0 out of order. Ours receives on loopback, so its counts
-        // must be 0 too.
+        // A stock sender's line always holds 0 lost and 0 out of order. The crate's end receives on loopback, so
+        // its counts must be 0 too.
         let udp = ours.udp.expect(&case);
         assert_eq!((udp.lost, udp.out_of_order), (0, 0), "{case}");
     }

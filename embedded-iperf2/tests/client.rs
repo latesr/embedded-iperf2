@@ -1,4 +1,4 @@
-//! The client of P-1 to P-7, P-22 and P-23, driven with bytes and times and no socket.
+//! Tests the client of P-1 to P-7, P-22, and P-23 with bytes and times, and without a socket.
 //!
 //! Every loop here stops after `LIMIT` polls, so a client that never ends fails a test within seconds instead of
 //! hanging it.
@@ -54,7 +54,7 @@ fn send_all(client: &mut Client<'_>, now_us: u64) -> (Vec<Vec<u8>>, String) {
 }
 
 /// Sends every UDP datagram of data the client offers at `now_us`, and returns them. It stops at the first end of
-/// the test, which it does not send.
+/// the test, and does not send that datagram.
 fn send_data(client: &mut Client<'_>, now_us: u64) -> Vec<Vec<u8>> {
     let mut datagrams = Vec::new();
     for _ in 0..LIMIT {
@@ -163,7 +163,7 @@ fn burst(burst_id: u32, size: u32) -> Vec<u8> {
     burst
 }
 
-/// A datagram from the server of a reverse UDP test: the prefix and fill.
+/// A datagram from the server of a reverse UDP test: the prefix and the fill.
 fn server_datagram(id: i64, sent_us: u64) -> Vec<u8> {
     let mut datagram = vec![b'6'; 512];
     Prefix {

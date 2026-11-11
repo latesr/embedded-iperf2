@@ -1,7 +1,7 @@
 //! The clock of one test: when it started, when each interval report is due, and the bytes at the last one.
 //!
-//! Every interval that ends during a test is reported, an empty one with no bytes, and the last part of an
-//! interval is reported before the final report, as a stock iperf prints them (P-19).
+//! Every interval that ends during a test is reported, an empty interval included. The last part of an interval
+//! is reported before the final report, as a stock iperf prints them (P-19).
 
 use crate::counts::UdpReceiver;
 use crate::report::{Report, UdpCounts};
@@ -30,7 +30,7 @@ impl Meter {
         }
     }
 
-    /// Starts the test at `now_us`, unless it has started.
+    /// Starts the test at `now_us`, if it has not started.
     pub(crate) fn start(&mut self, now_us: u64) {
         self.start_us.get_or_insert(now_us);
     }
@@ -50,8 +50,8 @@ impl Meter {
         )
     }
 
-    /// The interval report due at `now_us`, if one is. `bytes` is the total so far, and `udp` the receiver whose
-    /// counts the report holds.
+    /// The interval report due at `now_us`, if one is. `bytes` is the total so far. `udp` is the receiver when
+    /// the report holds its counts.
     ///
     /// The first interval due holds every byte since the last report. The intervals after it that have also ended
     /// are empty, because the bytes arrived after them.
@@ -153,8 +153,8 @@ pub(crate) fn timestamp(now_us: u64) -> Timestamp {
 
 /// Writes the fill of a stock iperf: the byte at index `i` of `out` is the digit `i % 10`.
 pub(crate) fn fill(out: &mut [u8]) {
-    // A copy of whole blocks. On the ESP32-S31, a remainder per byte held a TCP sender to half the rate of a
-    // plain socket loop.
+    // The fill must be a copy of whole blocks. A remainder for each byte held a TCP sender on an ESP32-S31 to half
+    // the rate of a plain socket loop.
     for block in out.chunks_mut(DIGITS.len()) {
         if let Some(from) = DIGITS.get(..block.len()) {
             block.copy_from_slice(from);

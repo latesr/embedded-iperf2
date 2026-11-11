@@ -1,5 +1,7 @@
-//! T-6: the `embassy-net` driver, our client against our server over two embassy-net stacks in one process, in
-//! each mode, and the rules that only a driver keeps (P-14, P-24, D-4, D-6).
+//! T-6: tests the `embassy-net` driver with the crate's client against the crate's server, in each mode.
+//!
+//! The client and the server run over two embassy-net stacks in one process. The tests also cover the rules that
+//! only a driver keeps (P-14, P-24, D-4, D-6).
 
 #![cfg(feature = "embassy-net")]
 #![allow(
@@ -78,8 +80,8 @@ fn every_mode_ends_with_both_reports_over_two_stacks() {
                         assert_eq!((udp.lost, udp.out_of_order), (0, 0), "{case}");
                     }
                     match length {
-                        // 51200 bytes take 100 ms at the rate. An end that missed its peer's close would wait
-                        // 2 s for it (P-1).
+                        // 51200 bytes take 100 ms at the rate. When an end misses its peer's close, the end
+                        // waits 2 s for the close (P-1).
                         Length::Bytes(count) => {
                             let end = if transport == Transport::Udp { 512 } else { 0 };
                             assert_eq!(sender.bytes, count + end, "{case}");
@@ -152,9 +154,9 @@ fn a_tcp_client_ends_with_its_report_when_the_server_closes_while_it_sends() {
         )
         .await;
         assert_eq!(client.outcome, Ok(Ok(())));
-        // The server closes first, and its socket is dropped as soon as its test ends. A client that read only when
-        // its writes failed would see the close only from the server's RST, 1 s after the server's FIN. A server
-        // whose socket went before the stack sent its last ACK would leave the client waiting 1 s for it.
+        // The server closes first. The server's socket is dropped as soon as its test ends. If the client reads only
+        // when its writes fail, it sees the close only from the server's RST, 1 s after the server's FIN. If the
+        // server's socket goes before the stack sends its last ACK, the client waits 1 s for that ACK.
         assert!(
             since(started) < Duration::from_millis(700),
             "{:?}",
@@ -227,7 +229,9 @@ fn a_tcp_server_and_client_each_run_two_tests_on_one_socket_without_a_reset() {
     });
 }
 
-/// The first datagram of a UDP test with `num_threads` streams, which a server refuses unless it is 1 (P-13).
+/// The first datagram of a UDP test with `num_threads` streams.
+///
+/// A server refuses the datagram when `num_threads` is not 1 (P-13).
 fn first_datagram(num_threads: u32) -> Vec<u8> {
     let mut datagram = vec![0; 512];
     Prefix {
@@ -293,8 +297,8 @@ fn a_udp_server_drops_a_refused_flow_and_serves_the_next_test() {
         let mut server_buffers = UdpBuffers::new();
         let mut stash = [0; STASH];
         let mut driver = UdpServer::new(server_buffers.bound(net.server, PORT), &mut stash);
-        // The refused flow sends on. The first test takes only its first datagram. Were the rest passed to the
-        // second test, they would end it as refused before the client's first datagram arrives.
+        // The refused flow continues to send. The first test takes only its first datagram. If the driver passes the
+        // rest to the second test, they end that test as refused before the client's first datagram arrives.
         let mut refused_buffers = UdpBuffers::new();
         let refused = refused_buffers.bound(net.client, 0);
         for _ in 0..6 {
@@ -584,8 +588,8 @@ fn a_udp_client_runs_with_a_send_buffer_of_one_datagram() {
 
 #[test]
 fn a_udp_client_whose_datagrams_cannot_leave_ends_with_an_error_after_a_second() {
-    // Nobody on the link holds this address, so ARP never resolves and smoltcp keeps every datagram in the
-    // socket's buffer, as it would with the link down.
+    // No host on the link has this address, so ARP never resolves. smoltcp then keeps every datagram in the
+    // socket's buffer, as it does when the link is down.
     let nobody = Ipv4Address::new(10, 0, 0, 9);
     run(async move |net| {
         let mut buffers = UdpBuffers::with_send_buffer(1024);

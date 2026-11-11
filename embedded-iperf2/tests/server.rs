@@ -1,5 +1,6 @@
-//! The server of P-8 to P-16 and P-21, driven with bytes and times and no socket, and with the bytes of the
-//! stock clients in the samples (T-2).
+//! Tests the server of P-8 to P-16 and P-21 with bytes and times, and without a socket.
+//!
+//! The tests also feed the server the bytes of the stock clients in the samples (T-2).
 //!
 //! Every loop here stops after `LIMIT` polls, so a server that never ends fails a test within seconds instead of
 //! hanging it.
@@ -53,7 +54,7 @@ fn udp() -> ServerConfig {
     }
 }
 
-/// A 2.2.2 client's TCP test header, as our client and the stock one write it.
+/// A 2.2.2 client's TCP test header, as the crate's client and the stock client write it.
 fn tcp_header() -> TestHeader {
     TestHeader {
         flags: 0x4001_0080,
@@ -143,8 +144,10 @@ struct Driven {
     now: u64,
 }
 
-/// Polls the server from `now` until its final report: sends everything it offers, calls `received` with the
-/// datagram `each_send` gives after each send, moves the clock to each wait, and keeps the reports.
+/// Polls the server from `now` until its final report, and keeps the reports.
+///
+/// The loop sends everything the server offers, and moves the clock to each wait. After each send, it calls
+/// `received` with the datagram that `each_send` gives.
 fn drive(server: &mut Server<'_>, mut now: u64, each_send: Option<&[u8]>) -> Driven {
     let mut sends = Vec::new();
     let mut reports = Vec::new();
@@ -559,7 +562,7 @@ fn a_sending_server_reports_each_interval() {
 }
 
 /// Feeds the client datagrams of a forward UDP sample to a server up to the end of the test, one every
-/// millisecond, and returns the server and the time of the last.
+/// millisecond, and returns the server and the time of the last datagram.
 fn replay<'b>(case: &str, buffer: &'b mut [u8]) -> (Server<'b>, u64) {
     let sample = common::read(case);
     let mut server = Server::new(udp(), buffer).unwrap();
