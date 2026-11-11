@@ -4,14 +4,19 @@
 //!
 //! A link is relative when it does not have a scheme. The target file must exist, and a `#fragment` must match a heading in it.
 //! Every page under `docs/` must be linked from `docs/README.md`. Every cited requirement ID must be defined, as
-//! the `ids` module checks. Every ADR must have the shape the `adrs` module checks.
+//! the `ids` module checks. Every ADR must have the shape the `adrs` module checks. The check warns on a long ADR
+//! that differs from `HEAD`.
 
 use pulldown_cmark::{Event, Parser, Tag, TagEnd};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-/// Runs the check and prints every problem. Fails when there is at least one.
+/// Runs the check and prints every problem. Fails when there is at least one. The warnings go to stderr and do not
+/// fail.
 pub fn run(root: &Path) -> Result<(), String> {
+    for warning in warnings(root) {
+        eprintln!("{warning}");
+    }
     let problems = check(root);
     if problems.is_empty() {
         return Ok(());
@@ -34,6 +39,22 @@ pub fn check(root: &Path) -> Vec<String> {
     problems.extend(super::adrs::check(&pages));
     problems.extend(super::ids::check(root));
     problems
+}
+
+/// One line per warning for the markdown files under `root` that differ from `HEAD`, or that git does not track and
+/// does not ignore. Outside a git repo there are none.
+fn warnings(root: &Path) -> Vec<String> {
+    let mut changed = std::collections::BTreeSet::new();
+    for args in [
+        &["diff", "HEAD", "--name-only", "--no-ext-diff"][..],
+        &["ls-files", "--others", "--exclude-standard"],
+    ] {
+        let Ok(paths) = super::git(root, args) else {
+            return Vec::new();
+        };
+        changed.extend(String::from_utf8_lossy(&paths).lines().map(PathBuf::from));
+    }
+    super::adrs::warnings(&super::files::read_files(root, "md"), &changed)
 }
 
 /// Checks one link from `page`. Returns the problem, if any.
@@ -271,5 +292,53 @@ mod tests {
         repo.write("target/doc/x.md", "[bad](nowhere.md)\n");
         repo.write(".git/x.md", "[bad](nowhere.md)\n");
         assert_eq!(check(&repo.0), Vec::<String>::new());
+    }
+
+    /// A short-shape ADR numbered `number` with more than 500 words.
+    fn long_adr(number: &str) -> String {
+        format!(
+            "# ADR-{number}: X\n\n**Status: accepted**\n\n## Context\n\nC.\n\n## Decision\n\n- D.\n\n## Rejected\n\n- **O.** R.\n\n{}\n",
+            "word ".repeat(500)
+        )
+    }
+
+    #[test]
+    fn a_long_adr_is_warned_on_only_where_it_differs_from_head() {
+        let repo = TempRepo::new("adr-warn");
+        fs::create_dir_all(repo.0.join("docs/decisions")).unwrap();
+        for args in [
+            &["init", "--quiet"][..],
+            &["config", "user.email", "test@example.com"],
+            &["config", "user.name", "test"],
+        ] {
+            super::super::git(&repo.0, args).unwrap();
+        }
+        repo.write("docs/decisions/0001-kept.md", &long_adr("0001"));
+        repo.write("docs/decisions/0002-edited.md", &long_adr("0002"));
+        super::super::git(&repo.0, &["add", "."]).unwrap();
+        super::super::git(&repo.0, &["commit", "--quiet", "-m", "a"]).unwrap();
+        assert_eq!(warnings(&repo.0), Vec::<String>::new());
+        repo.write(
+            "docs/decisions/0002-edited.md",
+            &format!("{}more\n", long_adr("0002")),
+        );
+        repo.write("docs/decisions/0003-new.md", &long_adr("0003"));
+        assert_eq!(
+            warnings(&repo.0),
+            vec![
+                "docs/decisions/0002-edited.md: warning: the ADR has 518 words, and the target is 500"
+                    .to_owned(),
+                "docs/decisions/0003-new.md: warning: the ADR has 517 words, and the target is 500"
+                    .to_owned(),
+            ]
+        );
+    }
+
+    #[test]
+    fn outside_a_git_repo_nothing_is_warned_on() {
+        let repo = TempRepo::new("adr-warn-no-git");
+        fs::create_dir_all(repo.0.join("docs/decisions")).unwrap();
+        repo.write("docs/decisions/0001-x.md", &long_adr("0001"));
+        assert_eq!(warnings(&repo.0), Vec::<String>::new());
     }
 }

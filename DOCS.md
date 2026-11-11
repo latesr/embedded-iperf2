@@ -25,18 +25,30 @@ An ADR records a decision about the product, or about how it is built, tested, a
 
 One ADR covers one mechanism, such as reconnect or factory reset, and every decision inside it. It is written when the step that builds the mechanism is done and reviewed. Until then the plan holds the step's decisions.
 
-An ADR records a high-level decision that a newcomer would otherwise undo: the shape of a mechanism, not its parameters. A name, a number, a timeout, an error variant, or a choice without a second option does not go in an ADR. Detail goes in rustdoc, and a Decision bullet names the file that holds it. An ADR states a rule. It does not state a list of cases, because a list goes stale.
+An ADR records a high-level decision that the reader would otherwise undo: the shape of a mechanism, not its parameters. A name, a number, a timeout, an error variant, or a choice without a second option does not go in an ADR. Detail goes in rustdoc, and a Decision bullet names the file that holds it. An ADR states a rule. It does not state a list of cases, because a list goes stale.
 
 ADRs live at `docs/decisions/NNNN-slug.md`. Each opens with `# ADR-NNNN: <the mechanism>`, a bold status line (`**Status: accepted**`, `**Status: proposed**`, or `**Status: superseded by ADR-NNNN**`), and a `Covers:` line. These sections follow:
 
 - `## Context`: the problem, in a few sentences.
 - `## Decision`: one bullet for each decision, with its reason.
-- `## Rejected`: one bullet for each option that a newcomer would propose, as `**The option.** The reason it does not work here.`
+- `## Rejected`: one bullet for each option that the reader would propose, as `**The option.** The reason it does not work here.`
 - `## Consequences`, when the decision costs a user something or obliges later work to do something: one bullet for each.
 
-An ADR has at most 500 words. A requirement ID appears only where the requirement is the reason for a decision. A new ADR gets its row in the index in `docs/README.md` in the same commit.
+An ADR over 500 words holds detail that belongs in rustdoc, or a second mechanism. Move the detail, or split the ADR. Do not harm readability or the writing rules to make it fit. An ADR has at most 1,000 words. A requirement ID appears only where the requirement is the reason for a decision. A new ADR gets its row in the index in `docs/README.md` in the same commit.
 
 - Until the first release, an ADR is edited in place to state the current decision, without a History bullet or a new ADR. The commit message says what changed.
 - After the first release, a change that keeps every Decision bullet is edited into the ADR. It adds a dated bullet to a `## History` section: `YYYY-MM-DD: Amended: <what changed>.`
 - After the first release, a change that reverses a Decision bullet is a new ADR. The new ADR says what it supersedes, and the old ADR's status becomes `superseded by ADR-NNNN`.
 - A wording fix or a renamed path does not need a History bullet.
+
+### Reviewing an ADR
+
+A review checks each of these, and names the line of each finding:
+
+1. Read the ADR once, as the reader described in `CONTRIBUTING.md`. Mark each bullet that needs a second read.
+2. Check each sentence against each rule of `WRITING.md`, in turn.
+3. Each Decision bullet holds one decision. Its reason is on the sentence that it explains.
+4. Each Rejected option is one that the reader would propose. Its reason says why the option fails here.
+5. Each fact matches the code, or the pinned source that it links.
+6. The ADR does not hold detail that rustdoc states. A rewrite does not lose a decision of the earlier version.
+7. A requirement ID appears only where the requirement is the reason for a decision.

@@ -1,7 +1,8 @@
 // A copy from embedded-devkit/xtask/src/shared. Edit it there, then run `cargo xtask sync` in the devkit.
 
 //! Checks that every Architectural Decision Record (ADR) in `docs/decisions/` has the shape `DOCS.md` states: the
-//! file name, the title, the status line, the sections in order, and the word limit of the short shape.
+//! file name, the title, the status line, the sections in order, and the word limit of the short shape. It warns on
+//! a short-shape ADR over the target number of words.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -19,7 +20,10 @@ const OLD_SECTIONS: [&str; 5] = [
 const SHORT_SECTIONS: [&str; 3] = ["Context", "Decision", "Rejected"];
 
 /// The number of words that an ADR in the short shape can hold.
-const MAX_WORDS: usize = 500;
+const MAX_WORDS: usize = 1000;
+
+/// The number of words in a short-shape ADR above which the check warns.
+const TARGET_WORDS: usize = 500;
 
 const SECTIONS_PROBLEM: &str = "the sections are not Context, Decision, Rejected and an optional Consequences, or the old Summary, Context, Decision, Alternatives and Consequences, with an optional History last";
 
@@ -68,10 +72,7 @@ pub(super) fn check(pages: &BTreeMap<PathBuf, String>) -> Vec<String> {
                 path.display()
             ));
         }
-        let found = sections(text);
-        let found = found.strip_suffix(&["History"]).unwrap_or(&found);
-        let short = found.strip_suffix(&["Consequences"]).unwrap_or(found) == SHORT_SECTIONS;
-        if short {
+        if is_short(text) {
             let words = text.split_whitespace().count();
             if words > MAX_WORDS {
                 problems.push(format!(
@@ -79,11 +80,51 @@ pub(super) fn check(pages: &BTreeMap<PathBuf, String>) -> Vec<String> {
                     path.display()
                 ));
             }
-        } else if found != OLD_SECTIONS {
+        } else if body_sections(text) != OLD_SECTIONS {
             problems.push(format!("{}: {SECTIONS_PROBLEM}", path.display()));
         }
     }
     problems
+}
+
+/// The `##` headings of `text`, without an optional `History` last.
+fn body_sections(text: &str) -> Vec<&str> {
+    let mut found = sections(text);
+    if found.last() == Some(&"History") {
+        found.pop();
+    }
+    found
+}
+
+/// Returns whether `text` has the sections of the short shape.
+fn is_short(text: &str) -> bool {
+    let found = body_sections(text);
+    found.strip_suffix(&["Consequences"]).unwrap_or(&found) == SHORT_SECTIONS
+}
+
+/// One line per warning, as `path: warning: what`, for each short-shape ADR among `pages` in `changed` that has
+/// more than the target number of words.
+pub(super) fn warnings(
+    pages: &BTreeMap<PathBuf, String>,
+    changed: &BTreeSet<PathBuf>,
+) -> Vec<String> {
+    let mut warnings = Vec::new();
+    for (path, text) in pages {
+        if path.parent() != Some(Path::new("docs/decisions"))
+            || !changed.contains(path)
+            || !is_short(text)
+        {
+            continue;
+        }
+        let words = text.split_whitespace().count();
+        if words > TARGET_WORDS {
+            warnings.push(format!(
+                "{}: warning: the ADR has {words} words, and the target is {TARGET_WORDS}",
+                path.display()
+            ));
+        }
+    }
+    warnings
 }
 
 /// The text of each `##` heading in `markdown`, outside fenced code blocks.
@@ -172,7 +213,7 @@ mod tests {
             ),
             (
                 "docs/decisions/0005-limit.md",
-                &short_with(500).replace("0001", "0005"),
+                &short_with(1000).replace("0001", "0005"),
             ),
         ]));
         assert_eq!(found, Vec::<String>::new());
@@ -180,21 +221,59 @@ mod tests {
 
     #[test]
     fn only_the_short_shape_has_a_word_limit() {
-        let long_old = format!("{GOOD}\n{}\n", "word ".repeat(600));
+        let long_old = format!("{GOOD}\n{}\n", "word ".repeat(1200));
         let found = check(&pages(&[
             ("docs/decisions/0001-old.md", &long_old),
             (
                 "docs/decisions/0002-long.md",
-                &short_with(501).replace("0001", "0002"),
+                &short_with(1001).replace("0001", "0002"),
             ),
         ]));
         assert_eq!(
             found,
             vec![
-                "docs/decisions/0002-long.md: the ADR has 501 words, and the limit is 500"
+                "docs/decisions/0002-long.md: the ADR has 1001 words, and the limit is 1000"
                     .to_owned()
             ]
         );
+    }
+
+    #[test]
+    fn a_changed_short_adr_over_the_target_is_warned_on() {
+        let long_old = format!("{GOOD}\n{}\n", "word ".repeat(600));
+        let pages = pages(&[
+            ("docs/decisions/0001-over.md", &short_with(501)),
+            (
+                "docs/decisions/0002-unchanged.md",
+                &short_with(501).replace("0001", "0002"),
+            ),
+            (
+                "docs/decisions/0003-at.md",
+                &short_with(500).replace("0001", "0003"),
+            ),
+            (
+                "docs/decisions/0004-old.md",
+                &long_old.replace("0001", "0004"),
+            ),
+            ("docs/a.md", &short_with(501)),
+        ]);
+        let changed: BTreeSet<PathBuf> = [
+            "docs/decisions/0001-over.md",
+            "docs/decisions/0003-at.md",
+            "docs/decisions/0004-old.md",
+            "docs/a.md",
+        ]
+        .into_iter()
+        .map(PathBuf::from)
+        .collect();
+        assert_eq!(
+            warnings(&pages, &changed),
+            vec![
+                "docs/decisions/0001-over.md: warning: the ADR has 501 words, and the target is 500"
+                    .to_owned()
+            ]
+        );
+        assert!(check(&pages).is_empty());
     }
 
     #[test]
