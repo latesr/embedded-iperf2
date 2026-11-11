@@ -98,10 +98,13 @@ fn index(version: &str) -> String {
     let mut text = format!(
         "# iperf {VERSION} samples\n\n\
          Covers: the samples that `cargo xtask record` recorded from `{version}`.\n\n\
-         Each case has three files. `<case>.bin` holds the bytes the relay saw, and the rustdoc of \
-         `xtask/src/record/sample.rs` states its layout. `<case>.client.txt` and `<case>.server.txt` hold what the \
-         client and the server printed. The server ran as `iperf -s -p <port>`, with `-u` for UDP. The client ran as \
-         `iperf -c 127.0.0.1 -p <relay port>`, with `-u` for UDP, and then the arguments in the table.\n\n\
+         Each case has three files:\n\n\
+         - `<case>.bin` holds the bytes that the relay saw. The rustdoc of `xtask/src/record/sample.rs` states its \
+         layout.\n\
+         - `<case>.client.txt` holds what the client printed.\n\
+         - `<case>.server.txt` holds what the server printed.\n\n\
+         The server ran as `iperf -s -p <port>`, with `-u` for UDP. The client ran as \
+         `iperf -c 127.0.0.1 -p <relay port>`, with `-u` for UDP, then the arguments in the table.\n\n\
          | Case | Transport | Client arguments |\n|---|---|---|\n"
     );
     for case in CASES {
@@ -343,4 +346,18 @@ fn take(sample: &Mutex<Vec<u8>>) -> Result<Vec<u8>, String> {
     Ok(std::mem::take(
         &mut *sample.lock().map_err(|_| "poisoned".to_owned())?,
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn the_index_equals_the_committed_readme() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../embedded-iperf2/tests/samples/2.2.2/README.md"
+        );
+        let committed = std::fs::read_to_string(path).unwrap();
+        let version = "iperf 2.2.2 (29 September 2026) pthreads (community)";
+        assert_eq!(super::index(version), committed);
+    }
 }
