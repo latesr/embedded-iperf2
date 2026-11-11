@@ -9,7 +9,8 @@ use std::time::Duration;
 pub const VERSION: &str = "2.2.2";
 const REPOSITORY: &str = "https://git.code.sf.net/p/iperf2/code";
 /// The tip of the branch `2-2-2`. The repository does not have a tag for 2.2.2. The last change to the source on
-/// the branch is the 2.2.2 release notes. The two commits after it change only the Android app.
+/// the branch is the 2.2.2 release notes. The two commits after it change only the Android app. The samples were
+/// recorded from a build of `1779e3e3` on `master`. Its `src/`, `include/`, and `compat/` equal those of the pin.
 const PIN: &str = "74d4b55321b9e7827c6567f3e48ae024ba3417c8";
 
 /// Builds iperf from the repository at the pin into `~/.local/opt/iperf/<version>/iperf`. Skips the build when a

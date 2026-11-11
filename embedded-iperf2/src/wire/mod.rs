@@ -21,7 +21,7 @@ pub use report::{SERVER_REPORT_LEN, ServerReport};
 /// Why a slice does not hold a message.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Error {
-    /// The slice ends before the message does. More bytes may complete it.
+    /// The slice ends before the message does. More bytes can complete it.
     Incomplete,
     /// The bytes cannot be the message, whatever follows them.
     Invalid,

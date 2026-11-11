@@ -243,7 +243,7 @@ A TCP server closes the connection. A UDP server ignores the flow.
 
 **P-18** Jitter compares differences of transit time, so the sender's clock and the receiver's clock do not need to agree. A sender writes its own monotonic time to the prefix.
 
-**P-19** When the caller sets an interval, the client and the server each report the bytes of every interval that ends while data moves, an empty interval included. Bytes count toward the interval they arrived in. A test that ends inside an interval reports that last part before its final report. A UDP receiver adds the lost, out-of-order, and datagram counts and the jitter of the interval.
+**P-19** When the caller sets an interval, the client and the server each report the bytes of each interval that ends while data moves. An empty interval is reported too. Bytes count toward the interval they arrived in. A test that ends inside an interval reports that last part before its final report. A UDP receiver adds the lost, out-of-order, and datagram counts and the jitter of the interval.
 
 **P-20** At the end of a test, the client and the server each report the bytes and the duration. A UDP sender's bytes include its first end-of-test datagram, as a stock sender's bytes do. A UDP receiver adds the lost, out-of-order, and datagram counts and the jitter. A UDP client adds the server report when one arrived.
 
@@ -263,7 +263,9 @@ A TCP server closes the connection. A UDP server ignores the flow.
 
 **D-6** Until a UDP server starts or refuses a test, a driver passes it the datagrams of every address and port. From then until the test ends, the driver passes only the datagrams of the address and port that started or refused it. A datagram from another address and port can end a test, as P-12 states. That datagram is the first datagram that the driver passes to the next server. After a server refuses a flow, the driver drops the later datagrams of that flow, and does not start a new server for each.
 
-**D-7** A `std` server can have a start timeout. When nothing starts a test within it, `run_one` fails with an error of kind `TimedOut`. For TCP, a connection starts a test. For UDP, a datagram that starts or refuses a test does. The server can then run another test. Without a start timeout, the server waits without a limit. A start timeout of zero is refused.
+**D-7** A `std` server can have a start timeout. When nothing starts a test within it, `run_one` fails with an error of kind `TimedOut`. For TCP, a connection starts a test. For UDP, a datagram that starts or refuses a test does. The server can then run another test.
+
+Without a start timeout, the server waits without a limit. A start timeout of zero is refused.
 
 ## Security
 

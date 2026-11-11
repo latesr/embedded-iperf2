@@ -235,7 +235,7 @@ fn copy_tcp(
         let read = from.read(&mut buffer).map_err(|error| error.to_string())?;
         let bytes = buffer.get(..read).unwrap_or_default();
         if bytes.is_empty() {
-            // The other side may still be sending, so only this direction ends.
+            // The other side can still send, so only this direction ends.
             return to
                 .shutdown(Shutdown::Write)
                 .or_else(|error| match error.kind() {

@@ -4,7 +4,8 @@
 //!
 //! - A packet ID below the highest ID received plus 1 counts as out of order. A duplicate counts as out of order.
 //! - A packet ID above the highest ID received plus 1 adds the gap to the lost count.
-//! - The lost count in a report is the sum of the gaps minus the out-of-order count, so a late datagram is not lost.
+//! - The lost count in a report is the sum of the gaps minus the out-of-order count, and is never below 0. A late
+//!   datagram is then not lost.
 //! - The datagram count is the highest packet ID received.
 //! - The jitter follows RFC 1889. From the second datagram on, `D` is the change in transit time without its sign,
 //!   and the jitter `J` updates as `J += (D - J) / 16`. A late datagram does not update the jitter.

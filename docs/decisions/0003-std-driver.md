@@ -39,7 +39,9 @@ The UDP server reads with `recv_from` and replies with `send_to`. It takes the s
 
 `set_start_timeout` on each server limits the wait for a test to start. `run_one` then fails with `TimedOut`. The limit is a setting, as the socket timeouts of `std` are, so `run_one` keeps one signature.
 
-A TCP server with a limit makes its listener non-blocking, and polls `accept` each millisecond. Without a limit, it keeps the blocking accept. The poll can accept a connection up to 1 ms late. The server's clock starts at the first bytes that it reads, so the clock can start up to 1 ms late. A UDP server already waits with a read timeout. While the core waits for the first datagram, the server caps the timeout at the deadline. A test that has started ends only by the limits of the core.
+A TCP server with a limit makes its listener non-blocking, and polls `accept` each millisecond. Without a limit, it keeps the blocking accept. The poll can accept a connection up to 1 ms late. The server's clock starts at the first bytes that it reads, so the clock can start up to 1 ms late.
+
+A UDP server already waits with a read timeout. While the core waits for the first datagram, the server caps the timeout at the deadline. A test that has started ends only by the limits of the core.
 
 ## Alternatives
 

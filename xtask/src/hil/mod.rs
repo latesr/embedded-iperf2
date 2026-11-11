@@ -6,7 +6,8 @@
 //! Each run checks these things:
 //!
 //! 1. The receiver did not lose a datagram, and did not see one out of order.
-//! 2. Both ends count the same bytes.
+//! 2. Both ends count the same bytes. In a reverse TCP test in byte mode against a stock server, the receiver
+//!    counts at least the byte count.
 //! 3. A test in time mode lasted its length at the receiver.
 //!
 //! The crate's `std` driver runs in this process, in the build profile of `xtask`.
@@ -121,7 +122,7 @@ impl Case {
         }
     }
 
-    /// How long a console command of this test may take.
+    /// The longest time that a console command of this test can take.
     fn timeout(&self) -> Duration {
         let seconds = match self.length {
             Length::Time { us } => us / 1_000_000,
@@ -347,7 +348,7 @@ impl Waiting {
             }
             Self::Ours(thread) => thread
                 .join()
-                .map_err(|_| "our server's thread panicked".to_owned())?,
+                .map_err(|_| "the std server's thread panicked".to_owned())?,
         }
     }
 }
@@ -429,10 +430,10 @@ fn ended(
 ) -> Result<Counts, String> {
     match outcome {
         Ok(Ok(())) => {}
-        Ok(Err(error)) => return Err(format!("our end: {error:?}")),
-        Err(error) => return Err(format!("our end: {error}")),
+        Ok(Err(error)) => return Err(format!("the host end: {error:?}")),
+        Err(error) => return Err(format!("the host end: {error}")),
     }
-    let report = last.ok_or("our end gave no final report")?;
+    let report = last.ok_or("the host end gave no final report")?;
     Ok(Counts {
         centiseconds: report.end_us.saturating_sub(report.start_us) / 10_000,
         bytes: report.bytes,

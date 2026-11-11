@@ -6,8 +6,10 @@ The core is `no_std` and does not allocate memory. `Client` and `Server` are san
 
 | Feature | Module | Runs on |
 |---|---|---|
-| `embassy-net` | `embassy` | A board, over the TCP and UDP sockets of an embassy-net stack. The caller supplies the stack and every buffer. |
-| `std` | `blocking` | A host, over the standard library's blocking sockets, on the caller's thread |
+| `embassy-net` | `embassy` | A board, over the TCP and UDP sockets of an embassy-net stack |
+| `std` | `blocking` | A host, over the standard library's blocking sockets |
+
+The `embassy-net` caller supplies the stack and every buffer. The `std` driver runs on the caller's thread.
 
 [`REQUIREMENTS.md`](REQUIREMENTS.md) states what the crate must do, and what v1 leaves out. [`docs/`](docs/README.md) holds the Architectural Decision Records (ADRs).
 

@@ -386,8 +386,8 @@ impl<'b> Server<'b> {
             self.state = State::Over;
             return;
         }
-        // A client can close as soon as it has sent or received its bytes, before the ack or the last chunk is
-        // out, so the test ends with what moved (P-10, P-16).
+        // A client can close as soon as it has sent or received its bytes. The ack or the last chunk can still be
+        // waiting, so the test ends with what moved (P-10, P-16).
         self.end_tcp(now_us);
     }
 

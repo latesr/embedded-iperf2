@@ -14,7 +14,7 @@ Covers: `Client` and `Server` in `embedded-iperf2`, and the modules under them: 
 - A datagram from another flow ends a UDP server's wait after the report, and that datagram starts the next test. Back-to-back tests from new ports then lose none of their start, as with the stock server (P-12, P-14, D-6).
 - The jitter is kept in integer nanoseconds. A board without a floating point unit would otherwise pay for a floating point update on every datagram (P-17, P-18).
 - Bytes count toward the interval they arrived in, not the interval of the next `poll`. A driver that reads before it polls then reports each interval as the stock iperf does (P-19).
-- A close or a deadline in any state ends the test with a report of the bytes sent or received so far. Only a close before the whole TCP test header is an error, because a client in byte mode closes as soon as it has its bytes (P-10, P-15, P-16, P-24).
+- A close or a deadline in any state ends the test with a report of the bytes sent or received so far. Only a close before the whole TCP test header is an error. A client in byte mode closes as soon as it has its bytes, so a later close is a normal end (P-10, P-15, P-16, P-24).
 
 ## Context
 
@@ -53,7 +53,7 @@ The jitter uses `J += (D - J) / 16` on `i64` nanoseconds. It can differ from the
 - A reverse TCP client starts to read once its last header byte is sent, not at its next poll.
 - A close while a client or a server sends ends the test with the bytes sent.
 - A deadline covers every state of a server once its first byte has arrived.
-- A reverse test in byte mode ends 10 s after its last data, because a lost close or a lost end of the test would otherwise hold it for ever.
+- A reverse test in byte mode ends 10 s after its last data. A lost close or a lost end of the test would otherwise hold it for ever.
 
 Interval reports follow the bytes. Before `received` counts its bytes, it closes an interval that is due, and holds the report for the next `poll`. The intervals of a stall are reported empty. A test that ends inside an interval reports that last part before the final report, as the stock iperf prints them.
 

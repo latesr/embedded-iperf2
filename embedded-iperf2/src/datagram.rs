@@ -1,4 +1,4 @@
-//! The UDP sender: datagrams with the prefix, an optional test header and fill, paced to the rate.
+//! The UDP sender: datagrams with the prefix, an optional test header, and fill, paced to the rate.
 
 use crate::meter::{fill, timestamp};
 use crate::stream::{Next, Stop};
