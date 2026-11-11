@@ -18,16 +18,20 @@
 
 mod loopback;
 
-use embedded_iperf2::{Config, Length, Report, Transport};
-use loopback::{run, serve, server_config};
+use embedded_iperf2::blocking::run_client;
+use embedded_iperf2::{Client, Config, Length, Report, Transport};
+use loopback::{End, serve, server_config, spawn};
+use std::io::ErrorKind;
 use std::net::{SocketAddr, TcpListener, UdpSocket};
 use std::process::{Child, Command, Stdio};
 use std::sync::OnceLock;
 use std::thread;
 use std::time::{Duration, Instant};
 
-/// The time a stock server gets to open its socket before the crate's client starts.
-const SERVER_START: Duration = Duration::from_millis(500);
+/// The longest time that a stock server gets to open its socket.
+const SERVER_START: Duration = Duration::from_secs(3);
+/// The number of stock servers that a test starts before it fails. A server can find its port taken by a probe.
+const SERVER_TRIES: u32 = 3;
 /// The time a stock process gets to exit, after the crate's server ends its test or after SIGINT.
 const EXIT_WAIT: Duration = Duration::from_secs(3);
 const RATE: u64 = 4_000_000;
@@ -163,16 +167,18 @@ impl Stock {
         );
     }
 
-    /// What the process printed, once it exits within `limit`.
+    /// What the process printed, once it exits within `limit`. A `limit` of zero checks once.
     fn exited_within(&mut self, limit: Duration) -> Option<String> {
         let started = Instant::now();
-        while started.elapsed() < limit {
+        loop {
             if self.0.as_mut().unwrap().try_wait().unwrap().is_some() {
                 return Some(printed(self.0.take().unwrap()));
             }
+            if started.elapsed() >= limit {
+                return None;
+            }
             thread::sleep(Duration::from_millis(20));
         }
-        None
     }
 }
 
@@ -257,17 +263,82 @@ fn free_port(transport: Transport) -> u16 {
     }
 }
 
+/// Starts a stock server, and returns it with its port. A UDP server has bound its port when this returns.
+///
+/// The crate's client counts a datagram that the kernel refuses as sent, so a UDP client that starts first loses
+/// datagrams. A datagram that only checks the port would start a test on the server, so the check binds the port
+/// instead. A server that binds while a check holds the port exits, and the next try uses a new port.
+fn stock_server(transport: Transport) -> (Stock, u16) {
+    if transport == Transport::Tcp {
+        let port = free_port(transport);
+        let args = ["-s".to_owned(), "-p".to_owned(), port.to_string()];
+        return (Stock::start(&args), port);
+    }
+    let mut printed = String::new();
+    for _ in 0..SERVER_TRIES {
+        let port = free_port(transport);
+        let args = [
+            "-s".to_owned(),
+            "-u".to_owned(),
+            "-p".to_owned(),
+            port.to_string(),
+        ];
+        let mut stock = Stock::start(&args);
+        let started = Instant::now();
+        while started.elapsed() < SERVER_START {
+            let probe = UdpSocket::bind(("0.0.0.0", port));
+            if probe.is_err_and(|error| error.kind() == ErrorKind::AddrInUse) {
+                return (stock, port);
+            }
+            if let Some(output) = stock.exited_within(Duration::ZERO) {
+                printed = output;
+                break;
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+    }
+    panic!(
+        "no stock server held its port within {SERVER_START:?} in {SERVER_TRIES} tries:\n{printed}"
+    );
+}
+
+/// Runs the crate's client of `config` to its end, against the stock server on `port`.
+///
+/// A stock TCP server binds its port before it listens, so a connection can be refused after the port is bound.
+/// A refused connection does not start a test, so the client connects again until `SERVER_START` passes.
+fn run_against_stock(config: Config, port: u16) -> End {
+    let server = SocketAddr::from(([127, 0, 0, 1], port));
+    spawn(move || {
+        let started = Instant::now();
+        loop {
+            let mut buffer = vec![0; 4096];
+            let mut client = Client::new(config, &mut buffer).unwrap();
+            let mut reports = Vec::new();
+            match run_client(&mut client, server, |report| reports.push(*report)) {
+                Err(error)
+                    if config.transport == Transport::Tcp
+                        && error.kind() == ErrorKind::ConnectionRefused
+                        && started.elapsed() < SERVER_START =>
+                {
+                    thread::sleep(Duration::from_millis(10));
+                }
+                outcome => {
+                    return End {
+                        reports,
+                        outcome: outcome.unwrap(),
+                    };
+                }
+            }
+        }
+    })
+    .get()
+}
+
 #[test]
 fn stock_server_against_our_client() {
     for mode in modes() {
-        let port = free_port(mode.transport);
-        let mut args = vec!["-s".to_owned(), "-p".to_owned(), port.to_string()];
-        if mode.transport == Transport::Udp {
-            args.push("-u".to_owned());
-        }
-        let stock = Stock::start(&args);
-        thread::sleep(SERVER_START);
-        let ours = run(mode.config(), SocketAddr::from(([127, 0, 0, 1], port)));
+        let (stock, port) = stock_server(mode.transport);
+        let ours = run_against_stock(mode.config(), port);
         let printed = stock.interrupt();
         assert_eq!(ours.outcome, Ok(()), "{mode:?}");
         agree(mode, !mode.reverse, &printed, &ours.last());
