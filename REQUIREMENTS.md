@@ -319,7 +319,7 @@ The boards come from embedded-devkit, and the firmware builds on its board crate
 
 ### Hardware tests
 
-**T-7** Firmware under `firmware/<board>/` runs a client and a server in each mode of T-5. It builds on the embedded-devkit board crate of each reference board. The other end is a stock iperf 2.2.2 or the `std` driver on the host. In each run, these must be true:
+**T-7** Firmware under `firmware/<board>/` runs a client and a server in each mode of T-5. It builds on the embedded-devkit board crate of the reference board. The other end is a stock iperf 2.2.2 or the `std` driver on the host. In each run, these must be true:
 
 - The receiver loses no datagram.
 - A test in time mode lasts its length at the receiver.
