@@ -30,6 +30,17 @@ pub fn run(root: &Path, staged: bool, base: &str) -> Result<(), String> {
     }
 }
 
+/// The commit that `--push` tests the changes since, from [`super::checks::push_base`]. Fails without one, as
+/// before a repo's first push, because the run would then mutate every line in the repo.
+pub fn push_base(root: &Path) -> Result<String, String> {
+    super::checks::push_base(root).ok_or_else(|| {
+        "the branch has no upstream and the repo has no origin/HEAD, so nothing marks what the push adds. Run \
+         `cargo xtask check --push` and `cargo xtask mutants --base <commit>`, with the last commit that passed the \
+         mutation check. Then the user pushes once with `--no-verify`"
+            .to_owned()
+    })
+}
+
 /// The cargo-mutants run over the diff at `diff_path`, with every feature on, because a test behind a feature
 /// does not run in a default build and every mutant it covers would survive.
 fn command(root: &Path, diff_path: &Path, jobs: usize) -> Command {
@@ -46,9 +57,9 @@ fn command(root: &Path, diff_path: &Path, jobs: usize) -> Command {
 }
 
 /// The mutants to build and test at once: the cores divided by three, and at least one and at most three. The
-/// cargo-mutants book says to "set the number of jobs very conservatively, starting at -j2 or -j3", because the
-/// build and test tools parallelize on their own and a high count gives spurious timeouts, which the conventions
-/// count as surviving mutants. A 4-vCPU CI runner gets one job and a 10-core laptop three.
+/// cargo-mutants book says to "set the number of jobs very conservatively, starting at -j2 or -j3". The build and
+/// test tools parallelise on their own, and a high count gives spurious timeouts, which count as surviving
+/// mutants. A 4-vCPU CI runner gets one job and a 10-core laptop three.
 fn jobs() -> usize {
     std::thread::available_parallelism()
         .map_or(1, |cores| cores.get() / 3)
@@ -121,6 +132,33 @@ mod tests {
     }
 
     #[test]
+    fn a_push_without_an_upstream_or_origin_head_says_to_name_a_base() {
+        let repo = repo("mutants-no-base");
+        let error = push_base(&repo.0).unwrap_err();
+        assert_eq!(
+            error,
+            "the branch has no upstream and the repo has no origin/HEAD, so nothing marks what the push adds. \
+             Run `cargo xtask check --push` and `cargo xtask mutants --base <commit>`, with the last commit that \
+             passed the mutation check. Then the user pushes once with `--no-verify`"
+        );
+        let head = String::from_utf8(git(&repo.0, &["rev-parse", "HEAD"]).unwrap())
+            .unwrap()
+            .trim()
+            .to_owned();
+        git(&repo.0, &["update-ref", "refs/remotes/origin/main", &head]).unwrap();
+        git(
+            &repo.0,
+            &[
+                "symbolic-ref",
+                "refs/remotes/origin/HEAD",
+                "refs/remotes/origin/main",
+            ],
+        )
+        .unwrap();
+        assert_eq!(push_base(&repo.0), Ok(head));
+    }
+
+    #[test]
     fn a_base_diff_covers_every_commit_since_the_base() {
         let repo = repo("mutants-range");
         repo.write("a.rs", "fn a() { committed(); }\n");
@@ -158,7 +196,7 @@ mod tests {
 
     #[test]
     fn nothing_staged_succeeds_without_running_cargo_mutants() {
-        // The temp repo has no Cargo.toml, so a cargo-mutants run there would fail.
+        // The temp repo does not have a Cargo.toml, so a cargo-mutants run there would fail.
         let repo = repo("mutants-empty");
         repo.write("a.rs", "fn a() { unstaged(); }\n");
         assert_eq!(run(&repo.0, true, "HEAD"), Ok(()));

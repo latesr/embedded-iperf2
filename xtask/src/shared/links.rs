@@ -2,7 +2,7 @@
 
 //! Checks every relative link and heading anchor in the repo's markdown files.
 //!
-//! A link is relative when it has no scheme. The target file must exist, and a `#fragment` must match a heading in it.
+//! A link is relative when it does not have a scheme. The target file must exist, and a `#fragment` must match a heading in it.
 //! Every page under `docs/` must be linked from `docs/README.md`. Every cited requirement ID must be defined, as
 //! the `ids` module checks. Every ADR must have the shape the `adrs` module checks.
 

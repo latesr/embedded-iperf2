@@ -121,7 +121,7 @@ pub(super) fn letters<V>(ids: &BTreeMap<String, V>) -> BTreeSet<String> {
         .collect()
 }
 
-/// The IDs in `markdown` whose letters are in `letters`, outside code blocks.
+/// The IDs in `markdown` with letters in `letters`, outside code blocks.
 fn markdown_citations(markdown: &str, letters: &BTreeSet<String>) -> Vec<Citation> {
     let code_blocks: Vec<Range<usize>> = Parser::new(markdown)
         .into_offset_iter()
@@ -135,7 +135,7 @@ fn markdown_citations(markdown: &str, letters: &BTreeSet<String>) -> Vec<Citatio
         .collect()
 }
 
-/// The IDs in the comments of a Rust file whose letters are in `letters`, with their ranges in `source`.
+/// The IDs with letters in `letters` in the comments of a Rust file, with their ranges in `source`.
 fn rust_citations(source: &str, letters: &BTreeSet<String>) -> Vec<Citation> {
     let mut found = Vec::new();
     let mut line_start = 0usize;
@@ -155,7 +155,7 @@ fn rust_citations(source: &str, letters: &BTreeSet<String>) -> Vec<Citation> {
     found
 }
 
-/// Each ID in `text` whose letters are in `letters`, in order.
+/// Each ID in `text` with letters in `letters`, in order.
 fn citations(text: &str, letters: &BTreeSet<String>) -> Vec<Citation> {
     let bounded = |byte: Option<u8>| byte.is_none_or(|byte| !byte.is_ascii_alphanumeric());
     let mut found = Vec::new();

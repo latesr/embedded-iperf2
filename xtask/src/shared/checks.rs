@@ -14,7 +14,7 @@ use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration, Instant};
 
-/// Prints the step's name, runs it, prints how long it took and fails when its exit status is not success.
+/// Prints the step's name, runs it, prints how long it took, and fails when its exit status is not success.
 pub fn step(name: &str, command: &mut Command) -> Result<(), String> {
     println!("==> {name}");
     let start = Instant::now();
@@ -36,7 +36,25 @@ fn duration(elapsed: Duration) -> String {
 
 /// The paths that differ from `HEAD`, staged or not. Outside a git repo the list is empty, so every check runs.
 pub fn changed_paths(root: &Path) -> Vec<PathBuf> {
-    super::git(root, &["diff", "HEAD", "--name-only", "--no-ext-diff"])
+    changed_since(root, "HEAD")
+}
+
+/// The commit that a push's checks compare with: the branch's merge base with its upstream, or else with
+/// `origin/HEAD`. `None` when the branch has neither, as before a repo's first push.
+pub fn push_base(root: &Path) -> Option<String> {
+    ["@{upstream}", "origin/HEAD"]
+        .into_iter()
+        .find_map(|other| {
+            let base = super::git(root, &["merge-base", "HEAD", other]).ok()?;
+            let base = String::from_utf8_lossy(&base).trim().to_owned();
+            (!base.is_empty()).then_some(base)
+        })
+}
+
+/// The paths that differ from `base`, in the commits since it and in the working tree. Outside a git repo, or for
+/// a `base` that git does not know, the list is empty, so every check runs.
+pub fn changed_since(root: &Path, base: &str) -> Vec<PathBuf> {
+    super::git(root, &["diff", base, "--name-only", "--no-ext-diff"])
         .map(|names| {
             String::from_utf8_lossy(&names)
                 .lines()
@@ -84,7 +102,7 @@ pub fn workspace_inputs(root: &Path, workspace: &str) -> Result<Vec<PathBuf>, St
             let Some(resolved) = inside_repo(&folder.join(path)) else {
                 continue;
             };
-            // A `path` key also names a target's source file, which has no manifest of its own.
+            // A `path` key also names a target's source file, and a source file does not have a manifest.
             if root.join(&resolved).join("Cargo.toml").is_file() {
                 folders.push(resolved.clone());
             }
@@ -125,7 +143,7 @@ pub fn reaches(changed: &[PathBuf], inputs: &[PathBuf]) -> bool {
 }
 
 /// Whether `path` is a file in the repo root that is not markdown, or lies under `.cargo/` or `xtask/`. These hold
-/// the build's shared settings, such as the toolchain, the lock file and the checks themselves.
+/// the build's shared settings, such as the toolchain, the lock file, and the checks.
 fn reaches_every_group(path: &Path) -> bool {
     let mut parts = path.components();
     match (parts.next(), parts.next()) {
@@ -148,24 +166,24 @@ fn is_markdown(path: &Path) -> bool {
     path.extension().is_some_and(|extension| extension == "md")
 }
 
-/// The feature sets that clippy, the tests and the builds each run over, each with a name for its step. By
-/// default they are every feature on, then every feature off. With `full` they are the feature powerset to depth
-/// 2: no feature, each feature alone and each pair.
+/// The feature sets that clippy, the tests, and the builds each run over, each with a name for its step: every
+/// feature on, then every feature off. `full` adds the feature powerset to depth 2: each feature alone and each
+/// pair.
 pub fn feature_runs(full: bool) -> Vec<(&'static str, Vec<&'static str>)> {
+    let mut runs = vec![
+        ("every feature", vec!["--all-features"]),
+        ("no feature", vec!["--no-default-features"]),
+    ];
     if full {
-        vec![("feature pairs", vec!["--feature-powerset", "--depth", "2"])]
-    } else {
-        vec![
-            ("every feature", vec!["--all-features"]),
-            ("no feature", vec!["--no-default-features"]),
-        ]
+        runs.push(("feature pairs", vec!["--feature-powerset", "--depth", "2"]));
     }
+    runs
 }
 
-/// The root workspace's crates that a change reaches, by package name. They are each crate whose folder holds a
-/// changed path, and each crate that depends on one of them, through any kind of dependency and with every feature
-/// on.
-/// `None` means every crate, because the tree has no changes or a change reaches every group.
+/// The root workspace's crates that a change reaches, by package name. They are each crate with a folder that holds
+/// a changed path, and each crate that depends on one of them, through any kind of dependency and with every
+/// feature on.
+/// `None` means every crate, because the tree does not have changes or a change reaches every group.
 pub fn reached_packages(root: &Path, changed: &[PathBuf]) -> Result<Option<Vec<String>>, String> {
     if changed.is_empty() || changed.iter().any(|path| reaches_every_group(path)) {
         return Ok(None);
@@ -246,7 +264,11 @@ mod tests {
         );
         assert_eq!(
             feature_runs(true),
-            [("feature pairs", vec!["--feature-powerset", "--depth", "2"])]
+            [
+                ("every feature", vec!["--all-features"]),
+                ("no feature", vec!["--no-default-features"]),
+                ("feature pairs", vec!["--feature-powerset", "--depth", "2"]),
+            ]
         );
     }
 
@@ -317,6 +339,65 @@ mod tests {
         assert!(error.starts_with("missing: could not start"), "{error}");
     }
 
+    /// A repo with two commits on `main`, and the first commit's id.
+    fn two_commits(name: &str) -> (TempRepo, String) {
+        let repo = TempRepo::new(name);
+        let git = |args: &[&str]| super::super::git(&repo.0, args).unwrap();
+        git(&["init", "--quiet", "--initial-branch=main"]);
+        git(&["config", "user.email", "test@example.com"]);
+        git(&["config", "user.name", "test"]);
+        repo.write("a.md", "a\n");
+        git(&["add", "."]);
+        git(&["commit", "--quiet", "-m", "first"]);
+        let first = String::from_utf8(git(&["rev-parse", "HEAD"]))
+            .unwrap()
+            .trim()
+            .to_owned();
+        repo.write("b.md", "b\n");
+        git(&["add", "."]);
+        git(&["commit", "--quiet", "-m", "second"]);
+        (repo, first)
+    }
+
+    #[test]
+    fn a_push_compares_with_the_upstream_then_origin_head_and_else_with_nothing() {
+        let (repo, first) = two_commits("checks-push-base");
+        let git = |args: &[&str]| super::super::git(&repo.0, args).unwrap();
+        assert_eq!(push_base(&repo.0), None);
+        // A remote that nothing fetches from: only its refs below matter.
+        git(&["remote", "add", "origin", "/no/such/remote"]);
+        assert_eq!(push_base(&repo.0), None);
+        // origin/HEAD alone, as in a clone with a branch that has not been pushed.
+        git(&["update-ref", "refs/remotes/origin/main", &first]);
+        git(&[
+            "symbolic-ref",
+            "refs/remotes/origin/HEAD",
+            "refs/remotes/origin/main",
+        ]);
+        assert_eq!(push_base(&repo.0), Some(first.clone()));
+        // An upstream wins over origin/HEAD.
+        git(&["update-ref", "refs/remotes/origin/topic", "HEAD"]);
+        git(&["config", "branch.main.remote", "origin"]);
+        git(&["config", "branch.main.merge", "refs/heads/topic"]);
+        let head = String::from_utf8(git(&["rev-parse", "HEAD"]))
+            .unwrap()
+            .trim()
+            .to_owned();
+        assert_eq!(push_base(&repo.0), Some(head));
+    }
+
+    #[test]
+    fn the_paths_since_a_base_cover_its_commits_and_the_working_tree() {
+        let (repo, first) = two_commits("checks-since");
+        repo.write("c.md", "c\n");
+        super::super::git(&repo.0, &["add", "c.md"]).unwrap();
+        assert_eq!(changed_since(&repo.0, &first), paths(&["b.md", "c.md"]));
+        assert_eq!(
+            changed_since(&repo.0, "no-such-commit"),
+            Vec::<PathBuf>::new()
+        );
+    }
+
     #[test]
     fn the_changed_paths_are_the_staged_and_unstaged_ones_and_none_outside_git() {
         let repo = TempRepo::new("checks-changed");
@@ -344,11 +425,11 @@ mod tests {
         std::fs::create_dir_all(repo.0.join("esp")).unwrap();
         repo.write(
             "esp/Cargo.toml",
-            "[workspace.dependencies]\nfamily = { path = \"family\" }\nmcu-net = { path = \"../mcu-net\" }\nmcu-console = { path = \"../mcu-console\", features = [\"x\"] }\n\n[patch.'https://github.com/esp-rs/esp-hal']\nesp-hal = { path = \"../../esp-hal/esp-hal\" }\n",
+            "[workspace.dependencies]\nfamily = { path = \"family\" }\nmcu-console-net = { path = \"../mcu-console-net\" }\nmcu-console = { path = \"../mcu-console\", features = [\"x\"] }\n\n[patch.'https://github.com/esp-rs/esp-hal']\nesp-hal = { path = \"../../esp-hal/esp-hal\" }\n",
         );
         assert_eq!(
             workspace_inputs(&repo.0, "esp"),
-            Ok(paths(&["esp", "mcu-console", "mcu-net"]))
+            Ok(paths(&["esp", "mcu-console", "mcu-console-net"]))
         );
         assert!(workspace_inputs(&repo.0, "missing").is_err());
     }

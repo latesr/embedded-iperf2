@@ -1,7 +1,7 @@
 // A copy from embedded-devkit/xtask/src/shared. Edit it there, then run `cargo xtask sync` in the devkit.
 
 //! Checks that every Architectural Decision Record (ADR) in `docs/decisions/` has the shape `DOCS.md` states: the
-//! file name, the title, the status line and the sections in order.
+//! file name, the title, the status line, and the sections in order.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};

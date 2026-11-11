@@ -22,13 +22,13 @@ use std::path::{Path, PathBuf};
 /// The shared commands.
 #[derive(Subcommand, Debug, PartialEq)]
 pub enum Command {
-    /// Check relative links, heading anchors and requirement IDs, or the requirement IDs in one commit message file.
+    /// Check relative links, heading anchors, and requirement IDs, or the requirement IDs in one commit message file.
     Links {
-        /// A commit message file whose requirement IDs to check instead of the repo.
+        /// A commit message file to check the requirement IDs of, in place of the repo.
         #[arg(long)]
         message: Option<PathBuf>,
     },
-    /// Check markdown, rustdoc and code comments for banned phrases, or one commit message file. Warns on the
+    /// Check markdown, rustdoc, and code comments for banned phrases, or one commit message file. Warns on the
     /// paragraphs that differ from HEAD.
     Prose {
         /// A commit message file to check instead of the repo.
@@ -45,9 +45,12 @@ pub enum Command {
     InstallHooks,
     /// Run cargo-mutants over the staged lines, or over the lines that differ from a base commit.
     Mutants {
-        /// Test the staged changes against HEAD. The pre-commit hook uses it.
-        #[arg(long, conflicts_with = "base")]
+        /// Test the staged changes against HEAD.
+        #[arg(long, conflicts_with_all = ["base", "push"])]
         staged: bool,
+        /// Test what the branch changed since its upstream, or else since origin/HEAD. The pre-push hook uses it.
+        #[arg(long, conflicts_with = "base")]
+        push: bool,
         /// Test the working tree against this commit.
         #[arg(long, default_value = "HEAD")]
         base: String,
@@ -81,7 +84,14 @@ pub fn run(root: &Path, command: Command) -> Result<(), String> {
             warn_all,
         ),
         Command::InstallHooks => hooks::install(root),
-        Command::Mutants { staged, base } => mutants::run(root, staged, &base),
+        Command::Mutants { staged, push, base } => {
+            let base = if push {
+                mutants::push_base(root)?
+            } else {
+                base
+            };
+            mutants::run(root, staged, &base)
+        }
         Command::Renumber => renumber::run(root),
     }
 }
@@ -104,7 +114,7 @@ pub fn require_tool(root: &Path, subcommand: &str, install: &str) -> Result<(), 
 
 /// Runs git in `root` and returns its output. Fails with git's error output when it exits with a failure.
 ///
-/// Git gives a hook `GIT_DIR`, `GIT_WORK_TREE` and an index in `GIT_INDEX_FILE`, and a commit with a pathspec
+/// Git gives a hook `GIT_DIR`, `GIT_WORK_TREE`, and an index in `GIT_INDEX_FILE`, and a commit with a pathspec
 /// makes the index a temporary one. They name the hook's repo, and `root` can be another, such as a scratch
 /// repo a test creates. So git finds the repo from `root`, and the index reaches git only when it lies in the
 /// git folder of the repo at `root`.
@@ -123,7 +133,7 @@ fn git_with_index(
     command.current_dir(root).args(args);
     clear_repo_env(&mut command)?;
     let cwd = std::env::current_dir().map_err(|error| format!("no current directory: {error}"))?;
-    // A folder that is not yet a repo has no git folder, so no inherited index is its own.
+    // A folder that is not yet a repo does not have a git folder, so no inherited index is its own.
     if let Some(index) = inherited
         && let Ok(git_dir) = git_with_index(root, &["rev-parse", "--absolute-git-dir"], None)
         && index_belongs_to(
@@ -209,9 +219,20 @@ mod tests {
             parse(&["mutants", "--staged"]).unwrap(),
             Command::Mutants {
                 staged: true,
+                push: false,
                 base: "HEAD".to_owned()
             }
         );
+        assert_eq!(
+            parse(&["mutants", "--push"]).unwrap(),
+            Command::Mutants {
+                staged: false,
+                push: true,
+                base: "HEAD".to_owned()
+            }
+        );
+        assert!(parse(&["mutants", "--push", "--staged"]).is_err());
+        assert!(parse(&["mutants", "--push", "--base", "main"]).is_err());
         assert_eq!(
             parse(&["prose", "--message", "MSG"]).unwrap(),
             Command::Prose {

@@ -14,13 +14,13 @@ use std::time::{Duration, SystemTime};
 /// How long a sweep lasts before the next one is due.
 const DAY: Duration = Duration::from_secs(86_400);
 
-/// The file whose modification time records the last sweep, under the repo root.
+/// The file under the repo root with a modification time that records the last sweep.
 const STAMP: &str = "target/.sweep-stamp";
 
 /// Runs `cargo sweep --time 7` over the repo when the last sweep was a day ago or more, and records the sweep. It
-/// sweeps every Cargo project under `root`, and each of `folders`, the folders under `root` whose own `target/` a
-/// repo's check builds into, which a recursive sweep does not find. Without cargo-sweep, or when a sweep fails, it
-/// says so and returns, so the check goes on.
+/// sweeps every Cargo project under `root`, and each of `folders`. A folder in `folders` has its own `target/`,
+/// which a repo's check builds into and a recursive sweep does not find. Without cargo-sweep, or when a sweep
+/// fails, it says so and returns, so the check continues.
 pub fn daily(root: &Path, folders: &[&str]) {
     let stamp = root.join(STAMP);
     let last = std::fs::metadata(&stamp)

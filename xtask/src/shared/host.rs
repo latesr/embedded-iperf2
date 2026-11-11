@@ -4,7 +4,9 @@
 //! through any interface on its subnet, which can be Wi-Fi while a wired one is up, so the choice is made here
 //! and printed.
 
-// The devkit's own commands do not call it. Its scenario tests and other repos' hardware tests do.
+// The devkit's own commands do not call it. Other repos' `cargo xtask hil` does. `mcu-scenario` holds the public
+// copy, `mcu_scenario::host_address`, which scenario tests use. This copy goes when those `hil` commands move
+// onto `mcu-scenario`.
 #![allow(dead_code)]
 
 use std::fmt;
@@ -46,7 +48,7 @@ impl fmt::Display for HostAddress {
 ///
 /// Fails when no interface is on the subnet, when two of the chosen medium are, or when the interfaces cannot be
 /// listed. On macOS a Wi-Fi interface is the device of the `Wi-Fi` port that `networksetup -listallhardwareports`
-/// lists. Elsewhere it is one whose `/sys/class/net/<name>/wireless` exists.
+/// lists. Elsewhere a Wi-Fi interface has a `/sys/class/net/<name>/wireless` folder.
 pub fn host_address(board: Ipv4Addr) -> Result<HostAddress, String> {
     let wifi = wifi_devices()?;
     let interfaces: Vec<Interface> = if_addrs::get_if_addrs()

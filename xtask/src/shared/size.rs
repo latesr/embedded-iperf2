@@ -2,7 +2,7 @@
 
 //! What an ELF image takes on the device: its flash, and each RAM its sections lie in.
 //!
-//! A section counts in the memory whose address range holds it, and not by its flags. An ESP32 image copies code
+//! A section counts in the memory with the address range that holds it, and not by its flags. An ESP32 image copies code
 //! into SRAM and PSRAM, in sections that are not writable, so a rule by the write flag misses that RAM.
 
 // A repo calls these from its own size command, and a repo without firmware does not have one yet.
@@ -30,13 +30,14 @@ pub struct Section {
 pub enum Kind {
     /// Code and constants that run from the flash, through its window.
     Flash,
-    /// RAM, whose sections the footprint counts.
+    /// RAM, with sections that the footprint counts.
     Ram,
 }
 
 /// One address range of the device, from `start` up to `end`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Memory {
+    /// The memory's name, such as `SRAM`, in the size report.
     pub name: &'static str,
     pub start: u64,
     pub end: u64,

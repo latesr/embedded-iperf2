@@ -1,6 +1,6 @@
 # Embedded library crates
 
-These rules add to `CODE.md` and `TESTING.md` for every library crate that runs on a microcontroller. Host tools, `xtask` and crates that build only with `std` do not follow them.
+These rules add to `CODE.md` and `TESTING.md` for every library crate that runs on a microcontroller. Host tools, `xtask`, and crates that build only with `std` do not follow them.
 
 This file is a copy from embedded-devkit. Edit it there, then run `cargo xtask sync` in the devkit.
 
@@ -13,16 +13,16 @@ This file is a copy from embedded-devkit. Edit it there, then run `cargo xtask s
 | No `unsafe` | `unsafe_code = "forbid"` |
 | Every public item has a doc comment | `missing_docs = "deny"` |
 | No `unwrap` or `expect` | `clippy::unwrap_used`, `clippy::expect_used` |
-| No `panic!`, `todo!` or `unimplemented!` | `clippy::panic`, `clippy::todo`, `clippy::unimplemented` |
+| No `panic!`, `todo!`, or `unimplemented!` | `clippy::panic`, `clippy::todo`, `clippy::unimplemented` |
 | No indexing that can go out of bounds | `clippy::indexing_slicing` |
 | No arithmetic that can overflow or divide by zero | `clippy::arithmetic_side_effects` |
 | No broken link in a doc comment | `rustdoc::broken_intra_doc_links = "deny"` |
 
-- Arithmetic overflow panics in debug builds and on targets that enable overflow checks. Use a checked, saturating or wrapping operation, and choose the one the value needs.
+- Arithmetic overflow panics in debug builds and on targets that enable overflow checks. Use a checked, saturating, or wrapping operation, and choose the one the value needs.
 - A 64-bit division on a 32-bit target links about 900 bytes of `compiler_builtins`. Keep hot paths free of it.
 - The `thumbv6m-none-eabi` build catches compare-and-swap atomics. A `--no-default-features` build of each core crate catches code that needs a feature.
-- The caller supplies time, randomness and key material through the traits in `REQUIREMENTS.md`.
-- `REQUIREMENTS.md` lists the dependency crates with traits that may appear in a public API. Any other dependency type in a public API needs an Architectural Decision Record (ADR).
+- The caller supplies time, randomness, and key material through the traits in `REQUIREMENTS.md`.
+- `REQUIREMENTS.md` lists the dependency crates with traits that can appear in a public API. Any other dependency type in a public API needs an Architectural Decision Record (ADR).
 - Board support code lives in the examples and the hardware test firmware. It never enters a library crate.
 
 ## Tests in a `no_std` crate
@@ -42,5 +42,5 @@ A repo runs the code size check once it has firmware.
 ## Firmware and upstream patches
 
 - Each board's test firmware is its own workspace under `firmware/<board>/`. The library workspace excludes it.
-- A firmware redirects an upstream crate with a `[patch]` section in its own `Cargo.toml`, because Cargo applies `[patch]` only from the root of the workspace it builds.
-- A patch for an upstream change that is not merged is pinned to a commit. The upstream crate's entity page names the pull request that the patch waits for. When upstream releases the change, the patch goes and the version rises.
+- Cargo applies `[patch]` only from the root of the workspace it builds. So a firmware redirects an upstream crate with a `[patch]` section in its own `Cargo.toml`.
+- A patch for an upstream change that is not merged is pinned to a commit. When upstream releases the change, the patch goes and the version rises.

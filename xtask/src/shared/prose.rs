@@ -1,6 +1,6 @@
 // A copy from embedded-devkit/xtask/src/shared. Edit it there, then run `cargo xtask sync` in the devkit.
 
-//! Checks markdown, rustdoc, code comments and commit messages for the phrases that WRITING.md bans.
+//! Checks markdown, rustdoc, code comments, and commit messages for the phrases that CHECKS.md lists.
 
 use pulldown_cmark::{Event, Options, Parser, Tag, TagEnd};
 use std::fs;
@@ -110,9 +110,9 @@ const WARNED: &[(&str, &[&str])] = &[
 /// files are warned on.
 const RELATIVE_TIME: &[&str] = &["today", "currently", "at the moment", "recently"];
 
-/// The docs folders whose pages state each fact once. Other pages repeat a pattern on purpose, such as a
+/// The docs folders in which each page states each fact once: the ADRs. Other pages repeat a pattern on purpose, such as a
 /// requirement or the rustdoc of sibling functions.
-const ONE_STATEMENT_FOLDERS: &[&str] = &["entities", "summaries", "decisions", "concepts"];
+const ONE_STATEMENT_FOLDERS: &[&str] = &["decisions"];
 
 /// Which of the warnings that depend on the kind of text apply.
 #[derive(Clone, Copy, Debug)]
@@ -272,7 +272,7 @@ fn changed_ranges(diff: &str) -> Changed {
     changed
 }
 
-/// The warnings for one file, whose prose `blocks` holds as `(first line, markdown)`. `changed` says whether a
+/// The warnings for one file, with its prose in `blocks` as `(first line, markdown)`. `changed` says whether a
 /// paragraph, given by its first and last line, is one to warn on. When `scope` asks for duplicates, a sentence is
 /// compared with every other sentence of the file.
 fn warn_blocks(
@@ -487,7 +487,7 @@ impl Sentence {
     }
 }
 
-/// `word` without an `ing`, `ed` or plural `s` ending, so that "flushes" and "flushed" compare equal to the stem
+/// `word` without an `ing`, `ed`, or plural `s` ending, so that "flushes" and "flushed" compare equal to the stem
 /// they share.
 fn stem(word: &str) -> String {
     let stemmed = if word.len() > 5 {
@@ -522,7 +522,7 @@ fn masked_prose(markdown: &str) -> String {
 }
 
 /// The byte ranges of the paragraphs of `markdown`. A blank line ends a paragraph. A line that starts a list
-/// item, a table row or a heading starts a new one, because the docs put one item on one line.
+/// item, a table row, or a heading starts a new one, because the docs put one item on one line.
 fn paragraphs(markdown: &str) -> Vec<(usize, usize)> {
     let mut ranges = Vec::new();
     let mut current: Option<(usize, usize)> = None;
@@ -547,7 +547,7 @@ fn paragraphs(markdown: &str) -> Vec<(usize, usize)> {
     ranges
 }
 
-/// The byte ranges of the sentences in `text`. A sentence ends at a full stop, a question mark or an exclamation
+/// The byte ranges of the sentences in `text`. A sentence ends at a full stop, a question mark, or an exclamation
 /// mark that white space or the end of the text follows.
 fn sentence_ranges(text: &str) -> Vec<(usize, usize)> {
     let mut ranges = Vec::new();
@@ -631,7 +631,7 @@ fn flush(block: &mut Vec<&str>, first_line: usize, blocks: &mut Vec<(usize, Stri
     }
 }
 
-/// The text of a line that holds only a comment, after its `//!`, `///` or `//` and one space. Rustdoc treats
+/// The text of a line that holds only a comment, after its `//!`, `///`, or `//` and one space. Rustdoc treats
 /// the space after the marker as part of the marker, and the spaces after it as indentation.
 pub(super) fn whole_line_comment(line: &str) -> Option<&str> {
     let trimmed = line.trim_start();
@@ -662,8 +662,8 @@ pub(super) fn trailing_comment(line: &str) -> Option<&str> {
         .map(str::trim_start)
 }
 
-/// Scans markdown whose first line is line `first_line` of its file. Code blocks, code spans and text in double
-/// quotes are not prose.
+/// Scans markdown that starts at line `first_line` of its file. Code blocks, code spans, and text in double quotes
+/// are not prose.
 fn scan_markdown(markdown: &str, first_line: usize) -> Vec<Finding> {
     let mask = prose_mask(markdown);
     let mut findings: Vec<(usize, String)> = Vec::new();
@@ -771,7 +771,7 @@ fn scan_run(text: &str, base: usize, findings: &mut Vec<(usize, String)>) {
 }
 
 /// `text` folded for matching, with the offset in the source of each folded byte. `base` is where `text` starts
-/// in the source. Folding makes ASCII lower case, a hyphen a space and a stretch of white space one space, so a
+/// in the source. Folding makes ASCII lower case, a hyphen a space, and a stretch of white space one space, so a
 /// phrase matches across a line break and in either spelling.
 fn fold(text: &str, base: usize) -> (String, Vec<usize>) {
     let mut folded = String::new();
@@ -1165,7 +1165,7 @@ mod tests {
         .collect();
         assert_eq!(
             compared,
-            [true, true, true, true, false, false, false, false]
+            [false, false, true, false, false, false, false, false]
         );
     }
 
@@ -1294,8 +1294,10 @@ mod tests {
     fn a_repo_compares_sentences_only_in_the_one_statement_folders() {
         let repo = committed("prose-warn-folders");
         let repeated = format!("Covers: x\n\n{FIRST}\n\n{SECOND}\n");
+        fs::create_dir_all(repo.0.join("docs/decisions")).unwrap();
         fs::create_dir_all(repo.0.join("docs/entities")).unwrap();
         fs::create_dir_all(repo.0.join("src")).unwrap();
+        repo.write("docs/decisions/0001-e.md", &repeated);
         repo.write("docs/entities/e.md", &repeated);
         repo.write("REQUIREMENTS.md", &repeated);
         repo.write("src/lib.rs", &format!("//! {FIRST}\n//!\n//! {SECOND}\n"));
@@ -1304,7 +1306,7 @@ mod tests {
             Ok(vec![
                 "docs/a.md:3: warning: \", which is\" (restating)".to_owned(),
                 "docs/a.md:5: warning: \", which is\" (restating)".to_owned(),
-                "docs/entities/e.md:5: warning: shares most of its words with line 3 (restating)"
+                "docs/decisions/0001-e.md:5: warning: shares most of its words with line 3 (restating)"
                     .to_owned(),
             ])
         );
