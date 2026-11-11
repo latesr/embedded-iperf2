@@ -8,8 +8,8 @@ use std::time::Duration;
 /// The version the samples come from. `MCU_IPERF2` must name a binary that reports it.
 pub const VERSION: &str = "2.2.2";
 const REPOSITORY: &str = "https://git.code.sf.net/p/iperf2/code";
-/// The tip of the branch `2-2-2`. The repository has no tag for 2.2.2, and the iperf2 entity page states why this
-/// commit is the release.
+/// The tip of the branch `2-2-2`. The repository has no tag for 2.2.2. The branch's last change to the source is
+/// the 2.2.2 release notes, and the two commits after it change only the Android app.
 const PIN: &str = "74d4b55321b9e7827c6567f3e48ae024ba3417c8";
 
 /// Builds iperf from the repository at the pin into `~/.local/opt/iperf/<version>/iperf`, unless a binary of the

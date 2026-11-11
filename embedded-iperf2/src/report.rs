@@ -21,7 +21,7 @@ pub struct Report {
     pub server: Option<ServerReport>,
 }
 
-/// What a UDP receiver counted (P-17). `docs/concepts/loss-and-jitter.md` in the repository defines each count.
+/// What a UDP receiver counted, as a stock iperf 2.2.2 server counts it (P-17).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct UdpCounts {
     /// The datagrams the sender sent, from the highest packet ID received.

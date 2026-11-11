@@ -34,7 +34,7 @@ The caller passes a buffer at construction, and each `Send` borrows from it. A T
 
 A UDP server doesn't keep an address. The stock server connects its socket to the first datagram's sender. A driver does the same, or drops datagrams from other sources when its socket can't disconnect. The core never names an address type.
 
-Until a test starts, the driver passes the server the datagrams of every address, and `Server::waits_for_first` tells it when to fix the address. A stock listener drains the end datagrams of old tests from any address in the same way ([summary](../summaries/iperf2-2.2.2.md#how-the-server-reads-a-udp-flow)).
+Until a test starts, the driver passes the server the datagrams of every address, and `Server::waits_for_first` tells it when to fix the address. A stock listener drops the end datagrams of old tests from any address in the same way ([`src/Listener.cpp:1030`](https://sourceforge.net/p/iperf2/code/ci/74d4b55321b9e7827c6567f3e48ae024ba3417c8/tree/src/Listener.cpp#l1030)).
 
 After its report, a UDP server waits 250 ms of silence for repeats of the end of the test (P-12). The stock listener hands each flow a connected socket and a thread, and opens a new socket, so a new flow is served during that wait. Our server serves one flow at a time (P-14). A driver that sees another flow's datagram during the wait calls `Server::another_flow_arrived`, which ends the test once the report has gone out. The driver keeps the datagram for the next test. The `std` driver leaves it in the socket, and the `embassy-net` driver copies it to a stash the caller lends, because embassy-net 0.9.1 can't peek at a datagram.
 

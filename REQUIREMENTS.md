@@ -6,24 +6,24 @@ Each requirement has an ID, such as W-3 or P-12. Tests, plans and commits cite t
 
 ## Terms
 
-Each term has one meaning. A term with a concept page is defined there.
+Each term has one meaning.
 
 | Term | Meaning |
 |---|---|
-| Stock iperf | A stock iperf is a binary built from the iperf2 repository at the commit the [iperf2](docs/entities/iperf2.md) page pins. |
+| Stock iperf | A stock iperf is a binary built from the iperf2 repository at commit `74d4b553`, the tip of the branch `2-2-2`. `cargo xtask install-iperf` builds it. |
 | Client | The client starts a test. It opens the connection and sends the test header. |
 | Server | The server listens for tests and accepts them. |
 | Sender and receiver | The sender sends the data of a test, and the receiver receives it. The client is the sender, except in a reverse test. |
 | Reverse test | A reverse test is one the client starts with `-R`. The server is the sender. |
 | Time mode and byte mode | A test in time mode lasts for a duration, `-t`. A test in byte mode sends a count of bytes, `-n`. |
-| Test header | See [Test header](docs/concepts/test-header.md). |
+| Test header | The test header is what a client sends at the start of a test. It states the direction, the length of the test, the datagram length, and the rate. See W-4 to W-8. |
 | Prefix | The prefix is the first 16 bytes of every UDP datagram. See W-1. |
 | Packet ID | The packet ID is the signed 64-bit number in the prefix. See W-1. |
-| End of a UDP test | See [End of a UDP test](docs/concepts/udp-end-of-test.md). |
+| End of a UDP test | The end of a UDP test is the datagram with a negative packet ID that the sender sends after its data. See W-3 and P-3. |
 | Server report | The server report is the datagram a UDP server sends at the end of a test. See W-11. |
 | Header ack | The header ack is the 28 bytes a TCP server sends after the test header. See W-9. |
 | Burst header | The burst header is the 120 bytes at the start of each burst of a reverse TCP test. See W-10. |
-| Loss, out-of-order and jitter | See [Loss, out-of-order and jitter](docs/concepts/loss-and-jitter.md). |
+| Loss, out-of-order and jitter | Loss, out-of-order and jitter are the counts that a UDP receiver keeps from the packet ID and send time of each datagram. See P-17 and P-18. |
 | Interval | An interval is one period of `-i`, the report interval. |
 | Caller | The caller is the code that owns a client or a server and its sockets, such as a driver. |
 
@@ -64,7 +64,7 @@ crates.io had no `no_std` iperf crate on 2026-10-05. Every iperf crate there is 
 
 ## Wire format
 
-Every field is big-endian. Each offset counts from the start of the message. [The iperf 2.2.2 source](docs/summaries/iperf2-2.2.2.md) is the source of each layout, and the samples check it (T-1).
+Every field is big-endian. Each offset counts from the start of the message. The samples check each layout (T-1).
 
 ### UDP datagrams
 
@@ -214,7 +214,7 @@ Every field is big-endian. Each offset counts from the start of the message. [Th
 
 ### Counting
 
-**P-17** A receiver counts loss, out-of-order and jitter as the [Loss, out-of-order and jitter](docs/concepts/loss-and-jitter.md) page states. For the same datagrams in the same order, its byte, datagram, lost and out-of-order counts equal those of a stock iperf 2.2.2 server.
+**P-17** For the same datagrams in the same order, a receiver's byte, datagram, lost, and out-of-order counts equal those of a stock iperf 2.2.2 server. Its jitter is the interarrival jitter of RFC 1889, and a final report holds the mean of the running jitter over the test.
 
 **P-18** Jitter compares differences of transit time, so the sender's clock and the receiver's clock do not need to agree. A sender writes its own monotonic time to the prefix.
 

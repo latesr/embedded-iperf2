@@ -1,8 +1,22 @@
 //! The counts a UDP receiver keeps from the packet ID and the send time of each datagram (P-17, P-18).
 //!
-//! The rules follow iperf 2.2.2's reporter, and `docs/concepts/loss-and-jitter.md` in the repository states them.
+//! The rules are those of the stock iperf 2.2.2 reporter:
+//!
+//! - A packet ID below the highest ID received plus 1 counts as out of order. A duplicate counts as out of order.
+//! - A packet ID above the highest ID received plus 1 adds the gap to the lost count.
+//! - The lost count in a report is the sum of the gaps minus the out-of-order count, so a late datagram is not lost.
+//! - The datagram count is the highest packet ID received.
+//! - The jitter follows RFC 1889. From the second datagram on, `D` is the change in transit time without its sign,
+//!   and the jitter `J` updates as `J += (D - J) / 16`. A late datagram does not update the jitter.
+//! - The final report holds the mean of the running jitter values.
+//!
 //! Jitter is kept in integer nanoseconds rather than the stock `double` seconds, so a board without an FPU does
-//! not pay for soft floats on every datagram.
+//! not pay for soft floats on every datagram. The last transit time carries across interval reports, as in RFC
+//! 1889. A stock server copies its transit statistics at each interval, so the first jitter update of an
+//! interval can differ from ours. The counts do not depend on it.
+//!
+//! See <https://sourceforge.net/p/iperf2/code/ci/74d4b55321b9e7827c6567f3e48ae024ba3417c8/tree/src/Reporter.c#l1406>
+//! and <https://sourceforge.net/p/iperf2/code/ci/74d4b55321b9e7827c6567f3e48ae024ba3417c8/tree/src/Reporter.c#l887>.
 
 use crate::report::UdpCounts;
 use crate::wire::Timestamp;

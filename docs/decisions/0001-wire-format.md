@@ -20,7 +20,7 @@ A newcomer's first design is an enum of the v1 modes, built by the parser. The p
 
 The server report has 60 bytes of transit statistics after the counts. A stock client reads them only when the report's `flags` has `EXTEND`, which a stock server sets only with `-e`. The counts, the duration and the jitter are what P-20 reports.
 
-A UDP client with `-C` sends no header, and the fill pattern lands where `flags` would be. That word, 0x36373839, sets `VERSION2` and `LEN_BIT` and states a length of 7196 bytes. The stock server checks for it before it reads any bit ([summary](../summaries/iperf2-2.2.2.md#how-the-server-reads-a-udp-flow)).
+A UDP client with `-C` sends no header, and the fill pattern lands where `flags` would be. That word, 0x36373839, sets `VERSION2` and `LEN_BIT` and states a length of 7196 bytes. The stock server checks for it before it reads any bit ([`src/Listener.cpp:1402`](https://sourceforge.net/p/iperf2/code/ci/74d4b55321b9e7827c6567f3e48ae024ba3417c8/tree/src/Listener.cpp#l1402)).
 
 ## Decision
 
