@@ -27,7 +27,7 @@ Each kind of work has its own rule file. Read the file when the work starts. A f
 
 `REQUIREMENTS.md` states each requirement under an ID, such as `C-6`. The letter names the section. A new requirement takes the next free number for its letter. It sits beside the requirements it relates to, so the numbers can appear out of order. An ID is never reused.
 
-`REQUIREMENTS.md` reads as a specification that a test house could test against. One ID states one behaviour that a test or a recorded sample can fail on, in a sentence or two. It states what the crate guarantees, not the mechanism, a workaround, or a pinned version, and it gives no reason. The reason and the rejected options go in the ADR for that mechanism.
+`REQUIREMENTS.md` reads as a specification that a test house could test against. One ID states one behaviour that a test or a recorded sample can fail on, in a sentence or two. It states what the crate guarantees, not the mechanism, a workaround, or a pinned version. When the reader would propose another behaviour, a `Rationale:` line under the requirement gives the reason and names that behaviour, in one or two sentences. A test does not check a `Rationale:` line. Any other reason goes in a comment at the code. A rule about how the code is written goes in an ADR, not in a requirement.
 
 `CHECKS.md` states how the IDs are checked, and how they are renumbered once before the first release.
 

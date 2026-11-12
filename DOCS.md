@@ -10,7 +10,7 @@ Each kind of knowledge has one home:
 
 - How to use a crate: its README and rustdoc. A family or board crate's README links the vendor documents for its chip, module, and board.
 - Why the code is as it is: an ADR, or a comment at the code (`CODE.md`).
-- What a crate must do: `REQUIREMENTS.md`.
+- What a crate must do, and the reason when the reader would propose another behaviour: `REQUIREMENTS.md`.
 - Open work and findings: the plan, outside the repo.
 
 `docs/` holds the ADRs, in `docs/decisions/`, and `docs/README.md`, which indexes them.
@@ -30,7 +30,7 @@ An ADR records a high-level decision that the reader would otherwise undo: the s
 ADRs live at `docs/decisions/NNNN-slug.md`. Each opens with `# ADR-NNNN: <the mechanism>`, a bold status line (`**Status: accepted**`, `**Status: proposed**`, or `**Status: superseded by ADR-NNNN**`), and a `Covers:` line. These sections follow:
 
 - `## Context`: the problem, in a few sentences.
-- `## Decision`: one bullet for each decision, with its reason.
+- `## Decision`: one bullet for each decision that the reader would otherwise undo, with its reason. A bullet does not restate a requirement or give its reason. The requirement's `Rationale:` line holds that reason.
 - `## Rejected`: one bullet for each option that the reader would propose, as `**The option.** The reason it does not work here.`
 - `## Consequences`, when the decision costs a user something or obliges later work to do something: one bullet for each.
 
@@ -50,5 +50,5 @@ A review checks each of these, and names the line of each finding:
 3. Each Decision bullet holds one decision. Its reason is on the sentence that it explains.
 4. Each Rejected option is one that the reader would propose. Its reason says why the option fails here.
 5. Each fact matches the code, or the pinned source that it links.
-6. The ADR does not hold detail that rustdoc states. A rewrite does not lose a decision of the earlier version.
+6. The ADR does not hold detail that rustdoc states, and does not restate a requirement. A rewrite does not lose a decision of the earlier version.
 7. A requirement ID appears only where the requirement is the reason for a decision.

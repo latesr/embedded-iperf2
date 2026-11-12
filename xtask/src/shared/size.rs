@@ -137,7 +137,7 @@ mod tests {
     };
     use object::write::elf::{FileHeader, SectionHeader as WriteHeader, Writer};
 
-    /// The S31's memories, from its entity page.
+    /// The S31's memories.
     const S31: [Memory; 4] = [
         Memory {
             name: "flash",
