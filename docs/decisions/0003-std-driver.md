@@ -6,7 +6,7 @@ Covers: the `blocking` module of `embedded-iperf2`, behind the `std` feature.
 
 ## Context
 
-On a host, the driver joins the core to `std::net` sockets. Host tools such as `mcu-run` use it, and so do the tests against a stock iperf. Most host network tools in Rust use tokio.
+On a host, the driver joins the core to `std::net` sockets. Host tools use it, and so do the tests against a stock iperf. Most host network tools in Rust use tokio.
 
 ## Decision
 

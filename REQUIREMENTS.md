@@ -38,7 +38,7 @@ On 2026-10-05, crates.io did not have an iperf crate that runs on a microcontrol
 ## Goals
 
 - A board runs an iperf 2 client or server against a stock iperf 2.2.2 on a host, over TCP or UDP, in either direction.
-- A host runs the same client and server through the `std` driver, so a test tool such as `mcu-run` can be the host end.
+- A host runs the same client and server through the `std` driver, so a host test tool can be the host end.
 
 ## Out of scope for v1
 
