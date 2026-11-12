@@ -13,9 +13,9 @@ On a host, the driver joins the core to `std::net` sockets. Host tools use it, a
 - The driver uses blocking sockets on the caller's thread. A tool runs one test at a time, so nothing needs to run in parallel, and the `std` feature does not need a runtime. A caller on tokio can run the driver with `spawn_blocking`.
 - The caller creates the `Client` or `Server` and passes it in. A bad setting then fails in `new`, and the driver returns only socket errors and the result of the test.
 - The driver reads without blocking before every `poll`. A sender without a rate limit never waits, so a driver that reads only during a wait misses the peer's close. A TCP server also misses a second connection, which it must refuse (P-14). The module doc of `blocking.rs` gives the timeouts of the loop.
-- A UDP server takes the source of the first datagram as its client, and drops the datagrams from other sources until the test ends. `std` cannot disconnect a UDP socket, so a connected socket could serve only its first client.
-- A server can limit its wait for a test to start. The limit is a setting on the server, not a parameter of `run_one`, so callers that do not use it do not change.
-- With a limit, a TCP server polls a non-blocking accept. `std` does not have an accept with a timeout, and nothing can wake a blocking accept.
+- A UDP server peeks at the source of each datagram before it takes the datagram. A datagram from a new flow that ends a test then stays in the socket for the next server. The socket is not connected, because `std` cannot disconnect a UDP socket, and a connected socket could serve only its first client.
+- The start timeout is a setting on the server, not a parameter of `run_one`, so callers that do not use it do not change.
+- With a start timeout, a TCP server polls a non-blocking accept. `std` does not have an accept with a timeout, and nothing can wake a blocking accept.
 
 ## Rejected
 

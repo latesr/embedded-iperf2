@@ -24,6 +24,8 @@
 //!
 //! While a test runs, the server's socket holds the connection and nothing listens on the port, so the stack
 //! answers a second connection with a RST (P-14). The driver uses IPv4 (D-4).
+//!
+//! See <https://docs.rs/crate/smoltcp/0.13.1/source/src/iface/interface/tcp.rs#32>.
 
 use crate::machine::Machine;
 use crate::{Action, Client, Report, Server, TestError, Transport};
