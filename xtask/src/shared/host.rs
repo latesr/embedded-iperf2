@@ -168,19 +168,20 @@ mod tests {
         }
     }
 
-    const BOARD: Ipv4Addr = Ipv4Addr::new(192, 168, 0, 50);
+    // The addresses are from the documentation ranges of RFC 5737.
+    const BOARD: Ipv4Addr = Ipv4Addr::new(192, 0, 2, 50);
 
     #[test]
     fn a_wired_interface_on_the_board_s_subnet_is_chosen_over_wi_fi() {
         let interfaces = [
-            interface("en0", [192, 168, 0, 206], 24, Medium::WiFi),
-            interface("en5", [10, 0, 0, 2], 8, Medium::Wired),
-            interface("en6", [192, 168, 0, 216], 24, Medium::Wired),
+            interface("en0", [192, 0, 2, 206], 24, Medium::WiFi),
+            interface("en5", [198, 51, 100, 2], 24, Medium::Wired),
+            interface("en6", [192, 0, 2, 216], 24, Medium::Wired),
         ];
         assert_eq!(
             choose(&interfaces, BOARD),
             Ok(HostAddress {
-                address: Ipv4Addr::new(192, 168, 0, 216),
+                address: Ipv4Addr::new(192, 0, 2, 216),
                 interface: "en6".to_owned(),
                 medium: Medium::Wired,
             })
@@ -190,8 +191,8 @@ mod tests {
     #[test]
     fn wi_fi_is_chosen_when_no_wired_interface_is_on_the_subnet() {
         let interfaces = [
-            interface("en5", [10, 0, 0, 2], 8, Medium::Wired),
-            interface("en0", [192, 168, 0, 206], 24, Medium::WiFi),
+            interface("en5", [198, 51, 100, 2], 24, Medium::Wired),
+            interface("en0", [192, 0, 2, 206], 24, Medium::WiFi),
         ];
         let chosen = choose(&interfaces, BOARD).unwrap();
         assert_eq!(
@@ -203,25 +204,25 @@ mod tests {
     #[test]
     fn the_subnet_is_the_interface_s_netmask() {
         let interfaces = [
-            interface("en6", [192, 168, 1, 216], 24, Medium::Wired),
-            interface("en7", [192, 168, 1, 217], 16, Medium::Wired),
+            interface("en6", [192, 0, 2, 216], 25, Medium::Wired),
+            interface("en7", [192, 0, 2, 217], 24, Medium::Wired),
         ];
         assert_eq!(choose(&interfaces, BOARD).unwrap().interface, "en7");
     }
 
     #[test]
     fn no_interface_on_the_subnet_fails_and_names_the_board() {
-        let interfaces = [interface("en5", [10, 0, 0, 2], 8, Medium::Wired)];
+        let interfaces = [interface("en5", [198, 51, 100, 2], 24, Medium::Wired)];
         let error = choose(&interfaces, BOARD).unwrap_err();
-        assert!(error.contains("192.168.0.50"), "{error}");
+        assert!(error.contains("192.0.2.50"), "{error}");
     }
 
     #[test]
     fn two_wired_interfaces_on_the_subnet_fail_and_name_both() {
         let interfaces = [
-            interface("en0", [192, 168, 0, 206], 24, Medium::WiFi),
-            interface("en6", [192, 168, 0, 216], 24, Medium::Wired),
-            interface("en7", [192, 168, 0, 217], 24, Medium::Wired),
+            interface("en0", [192, 0, 2, 206], 24, Medium::WiFi),
+            interface("en6", [192, 0, 2, 216], 24, Medium::Wired),
+            interface("en7", [192, 0, 2, 217], 24, Medium::Wired),
         ];
         let error = choose(&interfaces, BOARD).unwrap_err();
         assert!(error.contains("en6") && error.contains("en7"), "{error}");
@@ -231,17 +232,17 @@ mod tests {
     #[test]
     fn a_host_address_prints_its_address_interface_and_medium() {
         let address = |medium| HostAddress {
-            address: Ipv4Addr::new(192, 168, 0, 216),
+            address: Ipv4Addr::new(192, 0, 2, 216),
             interface: "en6".to_owned(),
             medium,
         };
         assert_eq!(
             address(Medium::Wired).to_string(),
-            "192.168.0.216 on en6, wired"
+            "192.0.2.216 on en6, wired"
         );
         assert_eq!(
             address(Medium::WiFi).to_string(),
-            "192.168.0.216 on en6, Wi-Fi"
+            "192.0.2.216 on en6, Wi-Fi"
         );
     }
 
