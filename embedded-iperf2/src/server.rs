@@ -1,4 +1,5 @@
-//! The server: it reads a test header, then receives or, in a reverse test, sends (P-8 to P-16, P-21).
+//! The server: it reads a test header, then receives or, in a reverse test, sends (P-8 to P-16, P-21, P-26 to
+//! P-28).
 
 use crate::config::{Action, ConfigError, ServerConfig, TestError, Transport};
 use crate::counts::UdpReceiver;
@@ -18,7 +19,7 @@ const MIN_FIRST_DATAGRAM: usize = 40;
 /// The longest datagram that a reverse UDP test sends, over IPv4 and over IPv6 (P-21).
 const MAX_DATAGRAM_IPV4: usize = 1470;
 const MAX_DATAGRAM_IPV6: usize = 1450;
-/// The default length of a reverse TCP burst (P-16).
+/// The default length of a reverse TCP burst (P-28).
 const DEFAULT_BURST: u32 = 131_072;
 /// The smallest `mBufLen` that a stock server ignores, one above the 16 MiB that it takes.
 const TOO_LONG_BUF_LEN: u32 = 16 * 1024 * 1024 + 1;
@@ -364,7 +365,7 @@ impl<'b> Server<'b> {
     }
 
     /// Records that a datagram from another address and port arrived. Returns whether the test ended for it,
-    /// so that the caller keeps the datagram as the first datagram of the next test (P-12, P-14).
+    /// so that the caller keeps the datagram as the first datagram of the next test (P-27, P-14).
     pub fn another_flow_arrived(&mut self) -> bool {
         // Before the first report is out, the old client has not received its report, so it keeps the server. A
         // report owed for an end that just arrived is dropped, as the old client's later ends are.
@@ -387,7 +388,7 @@ impl<'b> Server<'b> {
             return;
         }
         // A client can close as soon as it has sent or received its bytes. The ack or the last chunk can still be
-        // waiting, so the test ends with what moved (P-10, P-16).
+        // waiting, so the test ends with what moved (P-26).
         self.end_tcp(now_us);
     }
 

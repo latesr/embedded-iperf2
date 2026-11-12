@@ -1,4 +1,4 @@
-//! Tests the server of P-8 to P-16 and P-21 with bytes and times, and without a socket.
+//! Tests the server of P-8 to P-16, P-21, and P-26 to P-28 with bytes and times, and without a socket.
 //!
 //! The tests also feed the server the bytes of the stock clients in the samples (T-2).
 //!
@@ -640,7 +640,7 @@ fn another_flow_ends_the_report_wait_once_the_report_is_out() {
     );
     let first = send(server.poll(now));
     server.sent(first.len());
-    assert!(server.another_flow_arrived(), "(P-12, P-14)");
+    assert!(server.another_flow_arrived(), "(P-27, P-14)");
     let last = report(server.poll(now + 1_000));
     assert!(last.final_report);
     assert_eq!(last.udp.unwrap().datagrams, 130);
@@ -924,7 +924,7 @@ fn a_close_before_the_ack_is_out_ends_the_test_with_its_bytes() {
     let mut server = Server::new(tcp(), &mut buffer).unwrap();
     server.received(0, &[encode(&tcp_header()), vec![b'0'; 36]].concat());
     server.closed(5);
-    assert_eq!(report(server.poll(5)).bytes, 100, "P-10");
+    assert_eq!(report(server.poll(5)).bytes, 100, "P-26");
     assert_eq!(server.poll(5), Action::Done(Ok(())));
 }
 
@@ -937,7 +937,7 @@ fn a_close_while_a_reverse_test_sends_ends_it_with_the_bytes_sent() {
     server.sent(first.len());
     server.closed(10);
     let last = report(server.poll(10));
-    assert_eq!((last.bytes, last.final_report), (5000, true), "P-16");
+    assert_eq!((last.bytes, last.final_report), (5000, true), "P-26");
     assert_eq!(server.poll(10), Action::Done(Ok(())));
 }
 
@@ -1011,7 +1011,7 @@ fn a_time_mode_reverse_test_finishes_its_last_burst() {
     let first = send(server.poll(0));
     server.sent(first.len());
     let (rest, next) = send_all(&mut server, 1_000_000);
-    assert_eq!(rest.len(), 880, "the burst stated 1000 bytes (P-16)");
+    assert_eq!(rest.len(), 880, "the burst stated 1000 bytes (P-28)");
     assert_eq!(next, "Close");
 }
 

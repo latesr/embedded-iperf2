@@ -152,6 +152,11 @@ fn check_forward_udp(case: &str, amount: Amount) {
     let report = sample.server.first().expect("a server report");
     assert_eq!(report.len(), SERVER_REPORT_LEN);
     assert_eq!(Prefix::parse(report).unwrap().packet_id, 0);
+    let report_flags = u32::from_be_bytes(report[16..20].try_into().unwrap());
+    assert_eq!(
+        report_flags, 0x8800_0000,
+        "W-11: VERSION1 and SEQNO64B, without EXTEND"
+    );
     let report = ServerReport::parse(report).unwrap();
     assert_eq!(
         report.datagrams,

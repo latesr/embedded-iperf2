@@ -31,10 +31,6 @@ Each requirement has an ID, such as W-3. The letter names its section:
 | Interval | An interval is one period of `-i`, the report interval. |
 | Caller | The caller is the code that owns a client or a server and its sockets, such as a driver. |
 
-## Why another one?
-
-On 2026-10-05, crates.io did not have an iperf crate that runs on a microcontroller. This crate implements the iperf 2 protocol, so a stock iperf 2.2.2 can run on the host.
-
 ## Goals
 
 - A board runs an iperf 2 client or server against a stock iperf 2.2.2 on a host, over TCP or UDP, in either direction.
@@ -146,11 +142,15 @@ A reader refuses a length above 256. When a header is present, a reader also ref
 | 48 | 4 | `burst_size` | The length of the burst, header included |
 | 52 | 8 | `seqno_lower`, `seqno_upper` | 1 plus the bytes of every burst so far, this one included, low and high word |
 
-**W-13** The other fields of the burst header hold the sender's TCP statistics. The server writes 0xFFFFFFFF in `reverse_retry` at offset 36, and in each 4-byte field from offset 76 to 107. A stock reader takes that value as unknown. The server writes 0 from offset 108 to 119, and fill in the other bytes.
+**W-13** The other fields of the burst header hold the sender's TCP statistics. The server writes 0xFFFFFFFF in `reverse_retry` at offset 36, and in each 4-byte field from offset 76 to 107. It writes 0 from offset 108 to 119, and fill in the other bytes.
+
+Rationale: A stock client prints 0xFFFFFFFF as -1, which marks a statistic as unknown, and prints zeros as measured values. A board does not measure these statistics.
 
 ### The server report
 
-**W-11** The server report is 128 bytes. The prefix is zeros. `flags` at offset 16 is 0x88000000. Each 64-bit count is split into a high word and a low word.
+**W-11** The server report is 128 bytes. The prefix is zeros. `flags` at offset 16 is 0x88000000, without `EXTEND` (0x40000000). The transit statistics are zeros. Each 64-bit count is split into a high word and a low word.
+
+Rationale: Without `EXTEND`, a stock client prints only the counts, the duration, and the jitter of the report. A board then does not compute transit statistics that nothing prints.
 
 | Offset | Size | Field | Contents |
 |---|---|---|---|
@@ -161,20 +161,20 @@ A reader refuses a length above 256. When a header is present, a reader also ref
 | 40 | 4 | `outorder_cnt` | The out-of-order datagrams, low word |
 | 44 | 4 | `datagrams` | The highest packet ID received, low word |
 | 48 | 8 | `jitter1`, `jitter2` | The jitter, seconds and microseconds |
-| 56 | 60 | The transit statistics | The [transit statistics](#the-transit-statistics) |
+| 56 | 60 | The transit statistics | Zeros |
 | 116 | 4 | `error_cnt2` | The lost datagrams, high word |
 | 120 | 4 | `outorder_cnt2` | The out-of-order datagrams, high word |
 | 124 | 4 | `datagrams2` | The highest packet ID received, high word |
-
-#### The transit statistics
-
-The transit statistics are the minimum, the maximum, the sum, the mean, M2, and the last deviation of the transit time. Each is a pair of seconds and microseconds. The count of transit times and two IPG words follow them.
 
 ### Parsing
 
 **W-12** Every parser takes a byte slice. It reports that the slice holds a complete message, too few bytes, or bytes that cannot be the message. A parser never panics, and never reads past the end of the slice.
 
 ## Protocol
+
+**P-26** A close from the peer after the whole test header has gone out or arrived ends a TCP test with a report of the bytes so far, and is not an error. A TCP server that the client closes before the whole test header has arrived ends the test with a protocol error.
+
+Rationale: A client in byte mode closes as soon as it has its bytes, and a stock server with `-t` closes the connection at its duration. A stock client then prints its final report, as at a normal end.
 
 ### The client
 
@@ -184,7 +184,7 @@ The transit statistics are the minimum, the maximum, the sum, the mean, M2, and 
 
 **P-3** After its last datagram of data, a UDP client sends the end of the test of W-3. It waits up to 10 ms for a reply, and sends again after each silent wait, up to 200 sends. The server report is a reply of at least 128 bytes with 0x80000000 set in `flags`. The client ignores any other reply.
 
-**P-4** A UDP client that does not receive a server report ends the test without one, and its result says so.
+**P-4** A UDP client that does not receive a server report ends the test, and its final report does not hold a server report.
 
 **P-5** A client in a reverse TCP test sends the test header, then reads bursts of W-10 until the server closes. In time mode, it also ends the test at the duration plus 2 s after the header is out. In byte mode, it also ends the test when the byte count has arrived, or 10 s after the last bytes. It refuses a burst header with a `burst_size` below 120.
 
@@ -194,7 +194,7 @@ The transit statistics are the minimum, the maximum, the sum, the mean, M2, and 
 
 **P-23** A client in a reverse UDP test does not send a server report.
 
-**P-24** When the server closes the connection while a TCP client sends, the client ends the test with its final report. A close before a reverse test's header is out ends the test as refused.
+**P-24** A close before a reverse test's header is out ends the client's test as refused.
 
 **P-7** When the caller does not choose them, the client uses port 5001 and a duration of 10 s. It uses an `-l` of 131072 bytes for TCP, and of 1470 bytes for UDP over IPv4.
 
@@ -207,13 +207,19 @@ The transit statistics are the minimum, the maximum, the sum, the mean, M2, and 
 - `flags` have 0x40000000 set and 0x04000000 clear.
 - `flags` have 0x02000000 set.
 
-**P-10** A TCP server receives until the client closes, then closes. The test lasts from the first byte to the close. The bytes that arrive before the header ack is out count. A close before the header ack is out ends the test with its report.
+**P-10** A TCP server receives until the client closes, then closes. The test lasts from the first byte to the close. The bytes that arrive before the header ack is out count.
 
 **P-11** A UDP server starts a test at a datagram of at least 40 bytes with a packet ID above 0. It reads 64-bit packet IDs when the first datagram's `flags` have 0x08000000 set, and 32-bit IDs otherwise. It does not read a test header when `flags` are 0x36373839.
 
-**P-12** A UDP server ends a test at a negative packet ID, and sends the server report of W-11. For each datagram that arrives within 250 ms of its last report, it sends the same report again, up to 9 reports. Once the report has gone out, a datagram from another address and port ends the test, and the repeats stop.
+**P-12** A UDP server ends a test at a negative packet ID, and sends the server report of W-11. For each datagram that arrives within 250 ms of its last report, it sends the same report again, up to 9 reports.
 
-**P-13** A server refuses a test when the test header asks for a mode outside v1. Such a header has one of these:
+Rationale: The client repeats its end of the test until a report arrives, and the network can lose a report. A server that sent one report would leave that client to send all 200 ends of P-3.
+
+**P-27** Once a UDP server's report has gone out, a datagram from another address and port ends the test, and the repeats of P-12 stop. The old client can then end without a server report (P-4).
+
+Rationale: A wait that only silence ends would make a test that starts within 250 ms of the last test lose its first datagrams.
+
+**P-13** A server refuses a test when the test header asks for a mode outside v1, or has a length that W-7 refuses. A header for a mode outside v1 has one of these:
 
 - 0x80000000 set without 0x04000000
 - 0x10000000 or 0x00800000 set
@@ -224,9 +230,13 @@ A TCP server closes the connection. A UDP server ignores the flow.
 
 **P-14** A server runs one test at a time. It refuses a TCP connection, or ignores a UDP flow, that starts while a test runs. A UDP test that waits after its report, as P-12 states, is not running.
 
+Rationale: A stock server runs tests from several clients at once. This crate runs one, because the caller lends the buffers of one test, and a second test on the same link would change the first test's result.
+
 **P-15** When the caller gave a server a duration, the server ends a test at that duration from its first byte. It does so in every state until its final report, whether or not the end of the test arrived.
 
-**P-16** A TCP server in a reverse test sends for the length of W-6 at the rate of W-8. Each burst is `mBufLen` bytes, or 131072 bytes when `mBufLen` is 0, and at least 120 bytes. Each burst starts with the burst header of W-10. In time mode, the server sends the last burst whole. The server then shuts down its write side. A close from the client while the server sends ends the test with the bytes sent.
+**P-16** A TCP server in a reverse test sends bursts for the length of W-6 at the rate of W-8. In time mode, the server sends the last burst whole. The server then shuts down its write side.
+
+**P-28** Each burst of a reverse TCP test is `mBufLen` bytes, or 131072 bytes when `mBufLen` is 0, and at least 120 bytes. Each burst starts with the burst header of W-10.
 
 **P-21** A UDP server in a reverse test sends for the length of W-6 at the rate of W-8. Its datagrams are `mBufLen` bytes, cut to 1470 bytes over IPv4 or 1450 bytes over IPv6. When `mBufLen` is 0, the datagrams have those default lengths. Each datagram holds the prefix and fill, without a header. The server then sends one datagram with a negative packet ID, and does not wait for a reply.
 
@@ -234,7 +244,9 @@ A TCP server closes the connection. A UDP server ignores the flow.
 
 **P-17** For the same datagrams in the same order, a receiver's byte, datagram, lost, and out-of-order counts equal those of a stock iperf 2.2.2 server. Its jitter is the interarrival jitter of RFC 1889. A final report holds the mean of the running jitter over the test.
 
-**P-18** Jitter compares differences of transit time, so the sender's clock and the receiver's clock do not need to agree. A sender writes its own monotonic time to the prefix.
+**P-18** A sender writes its own monotonic time to the prefix.
+
+Rationale: Jitter compares differences of transit time, so the sender's clock and the receiver's clock do not need to agree. A board does not need to know the time of day.
 
 **P-19** When the caller sets an interval, the client and the server each report the bytes of each interval that ends while data moves. An empty interval is reported too. Bytes count toward the interval they arrived in. A test that ends inside an interval reports that last part before its final report. A UDP receiver adds the lost, out-of-order, and datagram counts and the jitter of the interval.
 
@@ -248,22 +260,31 @@ A TCP server closes the connection. A UDP server ignores the flow.
 
 **D-2** The `std` feature adds a driver that runs a client or a server over the standard library's TCP and UDP sockets.
 
+**D-10** When a UDP send of the `std` driver fails 1,000 times in a row, 1 ms apart, the run fails with the socket's error. A send that the peer refuses counts as sent.
+
+Rationale: A host refuses a UDP send for a moment when its socket buffer is full, so one failed send does not end a run.
+
 **D-3** The `embassy-net` feature adds an async driver that runs a client or a server over an embassy-net stack. The caller supplies the stack and every buffer.
+
+**D-8** When a UDP send of the `embassy-net` driver finds no space in the socket's buffer for 1 s, the run fails with `Error::SendTimedOut`.
+
+Rationale: With the link down, the stack keeps a datagram without an error, so a run without the limit never ends. A send counted as lost would report bytes that never left.
+
+**D-9** When the server does not accept a TCP connection of the `embassy-net` driver within 5 s, `run_tcp_client` fails with `Error::Connect`.
 
 **D-4** The `embassy-net` driver uses IPv4. The core does not depend on the address family, and the `std` driver takes IPv4 and IPv6.
 
 **D-5** Each driver supplies the core's time from a monotonic clock in microseconds.
 
-**D-6** Until a UDP server starts or refuses a test, a driver passes it the datagrams of every address and port. From then until the test ends, the driver passes only the datagrams of the address and port that started or refused it. A datagram from another address and port can end a test, as P-12 states. That datagram is the first datagram that the driver passes to the next server. After a server refuses a flow, the driver drops the later datagrams of that flow, and does not start a new server for each.
+**D-6** Until a UDP server starts or refuses a test, a driver passes it the datagrams of every address and port. From then until the test ends, the driver passes only the datagrams of the address and port that started or refused it.
+
+**D-11** A datagram from another address and port that ends a test, as P-27 states, is the first datagram that the driver passes to the next server. The `embassy-net` driver keeps it in a stash that the caller lends. A datagram longer than the stash is lost.
+
+**D-12** After a server refuses a flow, the driver drops the later datagrams of that flow, and does not start a new server for each.
 
 **D-7** A `std` server can have a start timeout. When nothing starts a test within it, `run_one` fails with an error of kind `TimedOut`. For TCP, a connection starts a test. For UDP, a datagram that starts or refuses a test does. The server can then run another test.
 
 Without a start timeout, the server waits without a limit. A start timeout of zero is refused.
-
-## Security
-
-- A server refuses a test with a header that it cannot read.
-- A server answers any client that reaches it, so it must run only on a network that the caller trusts.
 
 ## Platforms
 
@@ -287,7 +308,7 @@ Without a start timeout, the server waits without a limit. A start timeout of ze
 
 ### Samples
 
-**T-1** `cargo xtask record` records the samples from a stock iperf 2.2.2 on loopback into `embedded-iperf2/tests/samples/2.2.2/`. The cases cover TCP and UDP, each forward and reverse, and each transport in time mode and in byte mode. The samples' `README.md` lists them. A test parses every message in every sample, and checks each field that the wire format fixes.
+**T-1** The samples in `embedded-iperf2/tests/samples/2.2.2/` are recorded from a stock iperf 2.2.2 on loopback. The cases cover TCP and UDP, each forward and reverse, and each transport in time mode and in byte mode. The samples' `README.md` lists them. A test parses every message in every sample, and checks each field that the wire format fixes.
 
 **T-2** A test gives the client datagrams of each forward UDP sample to the server, in their recorded order. The byte, datagram, lost, and out-of-order counts in the server's report equal those in the recorded server report.
 
@@ -301,7 +322,7 @@ Without a start timeout, the server waits without a limit. A start timeout of ze
 
 ### Fuzzing
 
-**T-4** Each parser has a fuzz target. Its corpus starts with the messages in the samples.
+**T-4** A fuzz target runs every parser. Its corpus starts with the messages in the samples.
 
 ### Interoperability tests
 

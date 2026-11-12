@@ -29,7 +29,7 @@ pub(crate) enum Next {
 pub(crate) enum Content {
     /// The test header, then fill: a client's forward test.
     Header([u8; TEST_HEADER_LEN]),
-    /// Bursts of this many bytes, each with a burst header: a server's reverse test (P-16).
+    /// Bursts of this many bytes, each with a burst header: a server's reverse test (P-28).
     Bursts(u32),
 }
 

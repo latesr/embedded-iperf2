@@ -427,7 +427,7 @@ impl<'b> Client<'b> {
                 let report = self.meter.last(now_us, reader.bytes(), None, None);
                 self.finish(report);
             }
-            // The server ended the test, at its own duration or because it refused it (P-24).
+            // The server ended the test, at its own duration or because it refused it (P-24, P-26).
             State::TcpSending(sender) => {
                 let report = self.meter.last(now_us, sender.sent_bytes(), None, None);
                 self.finish(report);

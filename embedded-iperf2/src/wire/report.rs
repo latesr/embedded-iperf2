@@ -5,8 +5,7 @@ use super::{
 /// The length of the server report, prefix included.
 pub const SERVER_REPORT_LEN: usize = 128;
 
-/// The `flags` that the server writes: `VERSION1` and `SEQNO64B`, without `EXTEND`, so a client does not read the
-/// transit statistics.
+/// The `flags` that the server writes: `VERSION1` and `SEQNO64B`, without `EXTEND` (W-11).
 const REPORT_FLAGS: u32 = flags::VERSION1 | flags::SEQNO64B;
 
 /// The datagram a UDP server sends at the end of a test (W-11).

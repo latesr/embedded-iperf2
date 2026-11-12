@@ -1,6 +1,6 @@
 //! Tests the `std` driver with the crate's client against the crate's server on loopback, in each mode.
 //!
-//! The tests also cover the rules that only a driver keeps (P-14, D-4, D-5, D-6, D-7).
+//! The tests also cover the rules that only a driver keeps (P-14, D-4 to D-7, D-11, D-12).
 
 #![cfg(feature = "std")]
 #![allow(
@@ -290,7 +290,7 @@ fn a_udp_test_that_starts_during_the_last_report_wait_loses_nothing() {
     let ends = servers.get();
     assert_eq!((first.outcome, second.outcome), (Ok(()), Ok(())));
     let served = ends[1].0.last();
-    assert_eq!(served.bytes, 5_120 + 512, "(P-12, P-14)");
+    assert_eq!(served.bytes, 5_120 + 512, "(P-27, P-14, D-11)");
     assert_eq!(served.udp.unwrap().lost, 0);
     assert!(second.last().server.is_some());
 }

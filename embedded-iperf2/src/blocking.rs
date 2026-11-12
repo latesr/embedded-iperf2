@@ -8,7 +8,7 @@
 //! then reach the core before it sends again, in any of its states. A wait reads with a timeout of at most
 //! 100 ms. Before each read, the TCP server closes one connection that arrived while the test runs (P-14).
 //!
-//! A write that the peer refuses with a reset or a broken pipe reaches the core as a close (P-24, P-16).
+//! A write that the peer refuses with a reset or a broken pipe reaches the core as a close (P-26).
 
 use crate::machine::Machine;
 use crate::{Action, Client, Report, Server, TestError, Transport};
@@ -27,8 +27,7 @@ const RECEIVE_LEN: usize = 65_536;
 /// How often a server with a start timeout looks for a connection. The server's clock starts at the first bytes
 /// that it reads, so a connection accepted late starts the clock up to this much late.
 const ACCEPT_POLL: Duration = Duration::from_millis(1);
-/// How many sends of one datagram in a row can fail, a millisecond apart, before the driver gives up. A host
-/// refuses a UDP send for a moment when its socket buffer is full.
+/// How many sends of one datagram in a row can fail, a millisecond apart, before the driver gives up (D-10).
 const UDP_SEND_TRIES: u32 = 1_000;
 
 /// Runs the test of `client` against the server at `server`, and returns how it ended.
@@ -160,7 +159,7 @@ fn accept_within(listener: &TcpListener, timeout: Duration) -> io::Result<TcpStr
 
 /// A UDP server that runs one test at a time on a socket.
 ///
-/// The rules for each datagram are those of D-6:
+/// The rules for each datagram are those of D-6, D-11, and D-12:
 ///
 /// - A test belongs to the address and port of the datagram that started it. The server ignores other datagrams
 ///   until the test ends.

@@ -805,7 +805,7 @@ fn a_tcp_client_ends_with_its_report_when_the_server_closes_while_it_sends() {
     client.sent(first.len());
     client.closed(500);
     let last = report(client.poll(500));
-    assert_eq!((last.bytes, last.final_report), (1000, true), "P-24");
+    assert_eq!((last.bytes, last.final_report), (1000, true), "P-26");
     assert_eq!(client.poll(500), Action::Done(Ok(())));
 }
 

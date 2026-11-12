@@ -1,7 +1,7 @@
 //! T-6: tests the `embassy-net` driver with the crate's client against the crate's server, in each mode.
 //!
 //! The client and the server run over two embassy-net stacks in one process. The tests also cover the rules that
-//! only a driver keeps (P-14, P-24, D-4, D-6).
+//! only a driver keeps (P-14, P-26, D-4, D-6, D-8, D-9, D-11, D-12).
 
 #![cfg(feature = "embassy-net")]
 #![allow(
@@ -376,7 +376,7 @@ fn a_udp_test_that_starts_during_the_last_report_wait_loses_nothing() {
         let (ends, (first, second)) = join(serve_in_a_row(&mut driver, 2), clients).await;
         assert_eq!((first.outcome, second.outcome), (Ok(Ok(())), Ok(Ok(()))));
         let served = ends[1].0.last();
-        assert_eq!(served.bytes, second.last().bytes, "(P-12, P-14, D-6)");
+        assert_eq!(served.bytes, second.last().bytes, "(P-27, P-14, D-11)");
         assert_eq!(served.bytes, 5_120 + 512);
         assert_eq!(served.udp.unwrap().lost, 0);
     });
@@ -583,6 +583,27 @@ fn a_udp_client_runs_with_a_send_buffer_of_one_datagram() {
         .await;
         assert_eq!(client.outcome, Ok(Ok(())));
         assert_eq!(server.last().bytes, 5_120 + 512);
+    });
+}
+
+#[test]
+fn a_tcp_client_gives_up_on_a_server_that_does_not_answer_after_5_s() {
+    // No host on the link has this address, so the SYN never leaves and nothing answers.
+    let nobody = Ipv4Address::new(10, 0, 0, 9);
+    run(async move |net| {
+        let mut buffers = TcpBuffers::new();
+        let mut socket = buffers.socket(net.client);
+        let mut buffer = vec![0; 4096];
+        let mut client = Client::new(Config::tcp(), &mut buffer).unwrap();
+        let started = Instant::now();
+        let outcome = run_tcp_client(&mut client, &mut socket, (nobody, PORT).into(), |_| {}).await;
+        let took = since(started);
+        assert_eq!(outcome, Err(Error::Connect(ConnectError::TimedOut)));
+        // After the limit, the driver waits up to 1 s for its abort to leave, and nothing leaves to this address.
+        assert!(
+            took >= Duration::from_secs(5) && took < Duration::from_secs(7),
+            "{took:?}"
+        );
     });
 }
 

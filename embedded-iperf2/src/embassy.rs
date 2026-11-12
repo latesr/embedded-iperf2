@@ -37,12 +37,14 @@ use embassy_time::{Duration, Instant, Timer};
 
 /// The longest time that a TCP write waits for space in the send buffer.
 const LONGEST_WRITE: Duration = Duration::from_millis(100);
-/// The longest time that a UDP send waits for space in the send buffer. The core counts the end of a UDP test by
-/// its sends, so a send that never leaves would hold the test for ever.
+/// The longest time that a UDP send waits for space in the send buffer (D-8). smoltcp keeps a datagram in the
+/// buffer until ARP resolves.
+///
+/// See <https://docs.rs/crate/smoltcp/0.13.1/source/src/storage/packet_buffer.rs#191>.
 const SEND_TIMEOUT: Duration = Duration::from_secs(1);
 /// The longest time that a wait sleeps once the peer has closed, before the loop turns again.
 const LONGEST_SLEEP: Duration = Duration::from_millis(100);
-/// The longest time that a client waits for a TCP connection.
+/// The longest time that a client waits for a TCP connection (D-9).
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 /// The longest time that each step of a TCP close waits for the peer.
 const CLOSE_TIMEOUT: Duration = Duration::from_secs(1);
@@ -180,7 +182,7 @@ impl<'s> TcpServer<'s> {
 
 /// A UDP server that runs one test at a time on one bound socket.
 ///
-/// The rules for each datagram are those of D-6:
+/// The rules for each datagram are those of D-6, D-11, and D-12:
 ///
 /// - A test belongs to the address and port of the datagram that started it. The server ignores other datagrams
 ///   until the test ends.
@@ -208,7 +210,7 @@ impl<'s> UdpServer<'s> {
     /// Creates a new server on `socket`, which the caller has bound.
     ///
     /// `stash` holds the first datagram of a test that starts while the last test waits after its report, until
-    /// the next `run_one` (D-6). It must hold the client's datagram length, 1470 bytes by default. The server
+    /// the next `run_one` (D-11). It must hold the client's datagram length, 1470 bytes by default. The server
     /// drops a longer first datagram, and that test counts it as lost.
     pub fn new(socket: UdpSocket<'s>, stash: &'s mut [u8]) -> Self {
         Self {
