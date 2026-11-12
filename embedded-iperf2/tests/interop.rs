@@ -32,6 +32,9 @@ use std::time::{Duration, Instant};
 const SERVER_START: Duration = Duration::from_secs(3);
 /// The number of stock servers that a test starts before it fails. A server can find its port taken by a probe.
 const SERVER_TRIES: u32 = 3;
+/// The time a stock server gets to exit after the check finds its port held. A server that fails its bind prints
+/// the error at once, but exits about 1 s later. A server that has bound its port does not exit.
+const SETTLE: Duration = Duration::from_millis(1500);
 /// The time a stock process gets to exit, after the crate's server ends its test or after SIGINT.
 const EXIT_WAIT: Duration = Duration::from_secs(3);
 const RATE: u64 = 4_000_000;
@@ -263,36 +266,48 @@ fn free_port(transport: Transport) -> u16 {
     }
 }
 
-/// Starts a stock server, and returns it with its port. A UDP server has bound its port when this returns.
+/// Starts a stock server, and returns it with its port once it has bound the port.
 ///
 /// The crate's client counts a datagram that the kernel refuses as sent, so a UDP client that starts first loses
-/// datagrams. A datagram that only checks the port would start a test on the server, so the check binds the port
-/// instead. A server that binds while a check holds the port exits, and the next try uses a new port.
+/// datagrams. A connection or a datagram that only checks the port would start a test on the server, so the check
+/// binds the port instead. A server that binds while a check holds the port exits, and the next try uses a new port.
+/// On Linux, a TCP check can also bind between the server's bind and its listen. The server then cannot listen, and
+/// exits.
+///
+/// The server must bind `127.0.0.1`, not every address. Another test can bind `127.0.0.1` on the same port after
+/// `free_port` lets it go, and a loopback connection or datagram then goes to that socket, not to the server. With
+/// `-B`, the server cannot bind a port that another socket holds, and exits.
 fn stock_server(transport: Transport) -> (Stock, u16) {
-    if transport == Transport::Tcp {
-        let port = free_port(transport);
-        let args = ["-s".to_owned(), "-p".to_owned(), port.to_string()];
-        return (Stock::start(&args), port);
-    }
     let mut printed = String::new();
     for _ in 0..SERVER_TRIES {
         let port = free_port(transport);
-        let args = [
+        let mut args = vec![
             "-s".to_owned(),
-            "-u".to_owned(),
+            "-B".to_owned(),
+            "127.0.0.1".to_owned(),
             "-p".to_owned(),
             port.to_string(),
         ];
+        if transport == Transport::Udp {
+            args.push("-u".to_owned());
+        }
         let mut stock = Stock::start(&args);
         let started = Instant::now();
         while started.elapsed() < SERVER_START {
-            let probe = UdpSocket::bind(("0.0.0.0", port));
-            if probe.is_err_and(|error| error.kind() == ErrorKind::AddrInUse) {
-                return (stock, port);
-            }
+            // The bind check also passes when another socket holds the port and the server has exited, or has not yet
+            // tried its bind. So the exit is checked before the bind check, and again after it.
             if let Some(output) = stock.exited_within(Duration::ZERO) {
                 printed = output;
                 break;
+            }
+            if bound(transport, port) {
+                match stock.exited_within(SETTLE) {
+                    Some(output) => {
+                        printed = output;
+                        break;
+                    }
+                    None => return (stock, port),
+                }
             }
             thread::sleep(Duration::from_millis(10));
         }
@@ -302,13 +317,25 @@ fn stock_server(transport: Transport) -> (Stock, u16) {
     );
 }
 
-/// Runs the crate's client of `config` to its end, against the stock server on `port`.
+/// Returns whether another socket holds `port` on `127.0.0.1`.
+fn bound(transport: Transport, port: u16) -> bool {
+    let address = ("127.0.0.1", port);
+    let error = match transport {
+        Transport::Tcp => TcpListener::bind(address).err(),
+        Transport::Udp => UdpSocket::bind(address).err(),
+    };
+    error.is_some_and(|error| error.kind() == ErrorKind::AddrInUse)
+}
+
+/// Runs the crate's client of `config` to its end, against the stock server on `port`. Then stops the server, and
+/// returns the client's end with what the server printed.
 ///
 /// A stock TCP server binds its port before it listens, so a connection can be refused after the port is bound.
-/// A refused connection does not start a test, so the client connects again until `SERVER_START` passes.
-fn run_against_stock(config: Config, port: u16) -> End {
+/// A refused connection does not start a test, so the client connects again until `SERVER_START` passes. Panics
+/// with what the server printed when the client fails with a socket error.
+fn run_against_stock(config: Config, stock: Stock, port: u16) -> (End, String) {
     let server = SocketAddr::from(([127, 0, 0, 1], port));
-    spawn(move || {
+    let ours = spawn(move || {
         let started = Instant::now();
         loop {
             let mut buffer = vec![0; 4096];
@@ -322,24 +349,23 @@ fn run_against_stock(config: Config, port: u16) -> End {
                 {
                     thread::sleep(Duration::from_millis(10));
                 }
-                outcome => {
-                    return End {
-                        reports,
-                        outcome: outcome.unwrap(),
-                    };
-                }
+                outcome => return outcome.map(|outcome| End { reports, outcome }),
             }
         }
     })
-    .get()
+    .get();
+    let printed = stock.interrupt();
+    match ours {
+        Ok(end) => (end, printed),
+        Err(error) => panic!("the client failed: {error}\nThe stock server printed:\n{printed}"),
+    }
 }
 
 #[test]
 fn stock_server_against_our_client() {
     for mode in modes() {
         let (stock, port) = stock_server(mode.transport);
-        let ours = run_against_stock(mode.config(), port);
-        let printed = stock.interrupt();
+        let (ours, printed) = run_against_stock(mode.config(), stock, port);
         assert_eq!(ours.outcome, Ok(()), "{mode:?}");
         agree(mode, !mode.reverse, &printed, &ours.last());
     }
