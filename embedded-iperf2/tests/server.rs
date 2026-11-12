@@ -924,7 +924,7 @@ fn a_close_before_the_ack_is_out_ends_the_test_with_its_bytes() {
     let mut server = Server::new(tcp(), &mut buffer).unwrap();
     server.received(0, &[encode(&tcp_header()), vec![b'0'; 36]].concat());
     server.closed(5);
-    assert_eq!(report(server.poll(5)).bytes, 100, "P-26");
+    assert_eq!(report(server.poll(5)).bytes, 100, "P-10, P-26");
     assert_eq!(server.poll(5), Action::Done(Ok(())));
 }
 

@@ -172,7 +172,7 @@ Rationale: Without `EXTEND`, a stock client prints only the counts, the duration
 
 ## Protocol
 
-**P-26** A close from the peer after the whole test header has gone out or arrived ends a TCP test with a report of the bytes so far, and is not an error. A TCP server that the client closes before the whole test header has arrived ends the test with a protocol error.
+**P-26** A close from the peer ends a TCP test with a report of the bytes so far, and is not an error. A server that the client closes before the whole test header has arrived ends the test with a protocol error. A reverse client closed before its header is out ends the test as refused (P-24).
 
 Rationale: A client in byte mode closes as soon as it has its bytes, and a stock server with `-t` closes the connection at its duration. A stock client then prints its final report, as at a normal end.
 
@@ -246,7 +246,7 @@ Rationale: A stock server runs tests from several clients at once. This crate ru
 
 **P-18** A sender writes its own monotonic time to the prefix.
 
-Rationale: Jitter compares differences of transit time, so the sender's clock and the receiver's clock do not need to agree. A board does not need to know the time of day.
+Rationale: Jitter compares differences of transit time, so the two clocks do not need to agree. A sender that wrote the time of day would need a clock that a board does not have.
 
 **P-19** When the caller sets an interval, the client and the server each report the bytes of each interval that ends while data moves. An empty interval is reported too. Bytes count toward the interval they arrived in. A test that ends inside an interval reports that last part before its final report. A UDP receiver adds the lost, out-of-order, and datagram counts and the jitter of the interval.
 
@@ -260,9 +260,13 @@ Rationale: Jitter compares differences of transit time, so the sender's clock an
 
 **D-2** The `std` feature adds a driver that runs a client or a server over the standard library's TCP and UDP sockets.
 
-**D-10** When a UDP send of the `std` driver fails 1,000 times in a row, 1 ms apart, the run fails with the socket's error. A send that the peer refuses counts as sent.
+**D-10** When a UDP send of the `std` driver fails 1,000 times in a row, 1 ms apart, the run fails with the socket's error.
 
 Rationale: A host refuses a UDP send for a moment when its socket buffer is full, so one failed send does not end a run.
+
+**D-13** A UDP send of the `std` driver that fails because the peer is gone counts as sent.
+
+Rationale: The datagram is lost, as the network can lose any datagram. A refused send as an error would end a test that the server has not started to listen for.
 
 **D-3** The `embassy-net` feature adds an async driver that runs a client or a server over an embassy-net stack. The caller supplies the stack and every buffer.
 
@@ -279,6 +283,8 @@ Rationale: With the link down, the stack keeps a datagram without an error, so a
 **D-6** Until a UDP server starts or refuses a test, a driver passes it the datagrams of every address and port. From then until the test ends, the driver passes only the datagrams of the address and port that started or refused it.
 
 **D-11** A datagram from another address and port that ends a test, as P-27 states, is the first datagram that the driver passes to the next server. The `embassy-net` driver keeps it in a stash that the caller lends. A datagram longer than the stash is lost.
+
+Rationale: A datagram cut to the length of the stash would make the next test count part of a datagram as a whole one.
 
 **D-12** After a server refuses a flow, the driver drops the later datagrams of that flow, and does not start a new server for each.
 

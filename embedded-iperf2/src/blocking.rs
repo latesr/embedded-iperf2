@@ -507,9 +507,8 @@ fn udp_read(read: io::Result<(usize, SocketAddr)>) -> io::Result<Option<(usize, 
     }
 }
 
-/// Sends a datagram of `len` bytes with `send`. A send that reports the peer gone counts as sent. The datagram is
-/// lost, as the network can lose any datagram. Any other failure is tried again a millisecond later,
-/// up to `UDP_SEND_TRIES` sends.
+/// Sends a datagram of `len` bytes with `send`. A send that reports the peer gone counts as sent (D-13). Any other
+/// failure is tried again a millisecond later, up to `UDP_SEND_TRIES` sends.
 fn udp_send(len: usize, mut send: impl FnMut() -> io::Result<usize>) -> io::Result<Written> {
     let mut tries: u32 = 0;
     loop {

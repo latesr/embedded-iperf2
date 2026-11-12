@@ -15,7 +15,7 @@ On a board, the driver joins the core to the TCP and UDP sockets of embassy-net.
 - After a TCP test, the driver closes the connection, then waits for the peer's close and for the acknowledgement of its own close. A socket dropped earlier loses the acknowledgement, and the peer waits for it. The rustdoc of `embassy.rs` gives each limit.
 - After a UDP test, the driver waits until the socket has sent every datagram. A socket dropped earlier loses the end of the test, and the peer waits for it.
 - A UDP server takes a stash buffer from the caller. When a datagram from a new flow ends the wait after a report, the driver keeps that datagram in the stash, and gives it to the next server as its first datagram. The driver must take the datagram out of the socket, because embassy-net 0.9.1 cannot peek at one.
-- The driver, not the core, bounds a UDP send (D-8). The core counts its sends, and does not hold a limit on one.
+- The driver, not the core, bounds a UDP send (D-8), because only the driver sees that a send waits. The core ends a UDP test by a count of its sends.
 
 ## Rejected
 

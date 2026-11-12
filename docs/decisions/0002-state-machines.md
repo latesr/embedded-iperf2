@@ -10,7 +10,8 @@ The crate must run over any network stack, such as embassy-net on a board or the
 
 ## Decision
 
-- The core is a state machine that a driver calls. `poll` takes the time as a count of microseconds and returns the next action, and the driver reports what was sent, received, or closed. The caller lends the buffer that the core builds each send in. One core then runs over any network stack. The crate doc in `lib.rs` states the order of the calls.
+- The core is a state machine that a driver calls. `poll` returns the next action, and the driver reports what was sent, received, or closed. One core then runs over any network stack. The crate doc in `lib.rs` states the order of the calls.
+- The driver passes the time to each call as a count of microseconds, and lends the buffer that the core builds each send in. The core then does not need a clock or a heap.
 - One `Client` and one `Server` cover TCP and UDP in both directions, because a driver cannot know whether a test sends or receives before it reads the header.
 - The driver filters UDP datagrams by the peer's address, so the core does not hold an address type.
 - The driver, not the core, keeps the datagram from a new flow that ends a test (P-27), and passes it to the `Server` of the next test. A `Server` holds one test from start to end.
