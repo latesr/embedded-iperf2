@@ -39,8 +39,7 @@ This file is a copy from embedded-devkit. Edit it there, then run `cargo xtask s
 
 A repo runs the code size check once it has firmware.
 
-## Firmware and upstream patches
+## Firmware and upstream changes
 
 - Each board's test firmware is its own workspace under `firmware/<board>/`. The library workspace excludes it.
-- Cargo applies `[patch]` only from the root of the workspace it builds. So a firmware redirects an upstream crate with a `[patch]` section in its own `Cargo.toml`.
-- A patch for an upstream change that is not merged is pinned to a commit. When upstream releases the change, the patch goes and the version rises.
+- An upstream change that is not merged comes from a public fork of the upstream repo, at the commit that the dependency names by `rev`. When upstream releases the change, the `git` and `rev` keys go, and the version rises.

@@ -425,7 +425,7 @@ mod tests {
         std::fs::create_dir_all(repo.0.join("esp")).unwrap();
         repo.write(
             "esp/Cargo.toml",
-            "[workspace.dependencies]\nfamily = { path = \"family\" }\nmcu-console-net = { path = \"../mcu-console-net\" }\nmcu-console = { path = \"../mcu-console\", features = [\"x\"] }\n\n[patch.'https://github.com/esp-rs/esp-hal']\nesp-hal = { path = \"../../esp-hal/esp-hal\" }\n",
+            "[workspace.dependencies]\nfamily = { path = \"family\" }\nmcu-console-net = { path = \"../mcu-console-net\" }\nmcu-console = { path = \"../mcu-console\", features = [\"x\"] }\n\n[patch.'https://example.com/hal']\nhal = { path = \"../../hal/hal\" }\n",
         );
         assert_eq!(
             workspace_inputs(&repo.0, "esp"),
