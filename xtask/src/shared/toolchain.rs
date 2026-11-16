@@ -5,6 +5,7 @@
 use super::files::read_files;
 use std::fs;
 use std::path::Path;
+use std::process::Command;
 
 /// The stable toolchain that every `rust-toolchain.toml` names. It moves with [`NIGHTLY`] when a new stable is
 /// released.
@@ -86,6 +87,36 @@ fn nightlies(line: &str) -> Vec<&str> {
     found
 }
 
+/// The target triple that `toolchain` builds for by default, as `rustc -vV` prints it on its `host:` line.
+///
+/// A prebuilt tool can have a default target other than the host. A cargo-fuzz built for musl builds for musl,
+/// which the address sanitizer does not support. Pass this as its `--target`.
+// A repo with a fuzzer calls it from its own fuzz command, and the devkit has none.
+#[allow(dead_code)]
+pub fn host_triple(toolchain: &str) -> Result<String, String> {
+    let output = Command::new("rustc")
+        .args([&format!("+{toolchain}"), "-vV"])
+        .output()
+        .map_err(|error| format!("could not start rustc +{toolchain}: {error}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "rustc +{toolchain} -vV failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    host_of(&String::from_utf8_lossy(&output.stdout))
+        .map(str::to_owned)
+        .ok_or_else(|| format!("rustc +{toolchain} -vV printed no host line"))
+}
+
+/// The value of the `host:` line in the output of `rustc -vV`.
+fn host_of(version: &str) -> Option<&str> {
+    version
+        .lines()
+        .find_map(|line| line.strip_prefix("host:"))
+        .map(str::trim)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -143,6 +174,23 @@ mod tests {
             assert!(error.contains(".github/workflows/ci.yml"), "{error}");
             assert!(error.contains(NIGHTLY), "{error}");
         }
+    }
+
+    #[test]
+    fn the_host_is_read_from_its_own_line() {
+        let version = "rustc 1.101.0-nightly (6f5da406b 2026-10-10)\nbinary: rustc\n\
+                       host: x86_64-unknown-linux-gnu\nrelease: 1.101.0-nightly\n";
+        assert_eq!(host_of(version), Some("x86_64-unknown-linux-gnu"));
+        assert_eq!(host_of("rustc 1.99.0\nrelease: 1.99.0\n"), None);
+    }
+
+    #[test]
+    fn the_host_of_the_stable_toolchain_is_the_machine_the_test_runs_on() {
+        let host = host_triple(STABLE).unwrap();
+        assert!(
+            host.starts_with(&format!("{}-", std::env::consts::ARCH)),
+            "{host}"
+        );
     }
 
     #[test]
