@@ -6,28 +6,40 @@ on:
   pull_request:
   schedule:
     - cron: "0 3 * * *"
+  # Runs the nightly job by hand, such as to check a fix to it.
+  workflow_dispatch:
+
+# No job writes to the repo.
+permissions:
+  contents: read
+
+# A new push to a pull request makes its older run stale. A run on main is never cancelled, so each commit keeps
+# its result.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
   check:
-    if: github.event_name != 'schedule'
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # The mutation step diffs against the commit before the push, so it needs the history.
           fetch-depth: 0
       - name: Install the pinned toolchain and targets
-        run: rustup show
+        run: rustup toolchain install
       - name: Install the MSRV toolchain
         run: rustup toolchain install 1.91 --profile minimal
       - uses: taiki-e/install-action@cargo-hack
       - uses: Swatinem/rust-cache@v2
       # The interoperability tests run a stock iperf 2.2.2, and package managers do not have that version. The cache
       # key names the pin, so a new pin builds the binary again.
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: ~/.local/opt/iperf/2.2.2
           key: iperf-2.2.2-74d4b553
@@ -48,12 +60,12 @@ jobs:
           cargo xtask mutants --base "$base"
 
   nightly:
-    if: github.event_name == 'schedule'
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install the pinned toolchain and targets
-        run: rustup show
+        run: rustup toolchain install
       - name: Install nightly for the fuzzer
         run: rustup toolchain install nightly-2026-10-11 --profile minimal
       - uses: taiki-e/install-action@v2
@@ -65,5 +77,13 @@ jobs:
         run: cargo hack check --workspace --feature-powerset --no-dev-deps
       - name: Fuzz the parser for ten minutes
         run: cargo xtask fuzz --seconds 600
+      # The crash input is the regression test that TESTING.md asks for, and it is lost with the runner.
+      - name: Keep the crash input
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: fuzz-artifacts
+          path: fuzz/artifacts/
+          if-no-files-found: ignore
       - name: Mutation test every crate
         run: cargo mutants --workspace
