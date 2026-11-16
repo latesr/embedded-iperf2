@@ -17,13 +17,17 @@ const MAX_LEN: usize = 512;
 pub fn run(root: &Path, seconds: u64) -> Result<(), String> {
     crate::shared::require_tool(root, "fuzz", "cargo install cargo-fuzz")?;
     seed_corpus(root)?;
+    let nightly = crate::shared::toolchain::NIGHTLY;
+    let host = crate::shared::toolchain::host_triple(nightly)?;
     println!("==> fuzz {TARGET}");
     let status = Command::new("cargo")
         .current_dir(root)
         .args([
-            &format!("+{}", crate::shared::toolchain::NIGHTLY),
+            &format!("+{nightly}"),
             "fuzz",
             "run",
+            "--target",
+            &host,
             TARGET,
             "--",
             &format!("-max_total_time={seconds}"),
