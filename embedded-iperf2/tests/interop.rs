@@ -18,9 +18,8 @@
 
 mod loopback;
 
-use embedded_iperf2::blocking::run_client;
-use embedded_iperf2::{Client, Config, Length, Report, Transport};
-use loopback::{End, serve, server_config, spawn};
+use embedded_iperf2::{Config, Length, Report, Transport};
+use loopback::{End, serve, server_config, spawn, try_run};
 use std::io::ErrorKind;
 use std::net::{SocketAddr, TcpListener, UdpSocket};
 use std::process::{Child, Command, Stdio};
@@ -338,10 +337,7 @@ fn run_against_stock(config: Config, stock: Stock, port: u16) -> (End, String) {
     let ours = spawn(move || {
         let started = Instant::now();
         loop {
-            let mut buffer = vec![0; 4096];
-            let mut client = Client::new(config, &mut buffer).unwrap();
-            let mut reports = Vec::new();
-            match run_client(&mut client, server, |report| reports.push(*report)) {
+            match try_run(config, server) {
                 Err(error)
                     if config.transport == Transport::Tcp
                         && error.kind() == ErrorKind::ConnectionRefused
@@ -349,7 +345,7 @@ fn run_against_stock(config: Config, stock: Stock, port: u16) -> (End, String) {
                 {
                     thread::sleep(Duration::from_millis(10));
                 }
-                outcome => return outcome.map(|outcome| End { reports, outcome }),
+                ended => return ended,
             }
         }
     })

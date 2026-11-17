@@ -6,6 +6,7 @@
 
 use embedded_iperf2::blocking::{TcpServer, UdpServer, run_client};
 use embedded_iperf2::{Client, Config, Report, Server, ServerConfig, TestError, Transport};
+use std::io;
 use std::net::{SocketAddr, TcpListener, UdpSocket};
 use std::sync::mpsc;
 use std::thread;
@@ -108,13 +109,17 @@ pub fn serve(config: ServerConfig) -> (SocketAddr, Pending<End>) {
 
 /// Starts the crate's client of `config` against `server`.
 pub fn start(config: Config, server: SocketAddr) -> Pending<End> {
-    spawn(move || {
-        let mut buffer = vec![0; 4096];
-        let mut client = Client::new(config, &mut buffer).unwrap();
-        let mut reports = Vec::new();
-        let outcome = run_client(&mut client, server, |report| reports.push(*report)).unwrap();
-        End { reports, outcome }
-    })
+    spawn(move || try_run(config, server).unwrap())
+}
+
+/// Runs the crate's client of `config` against `server` on this thread, and returns the error of a socket that
+/// fails.
+pub fn try_run(config: Config, server: SocketAddr) -> io::Result<End> {
+    let mut buffer = vec![0; 4096];
+    let mut client = Client::new(config, &mut buffer).unwrap();
+    let mut reports = Vec::new();
+    let outcome = run_client(&mut client, server, |report| reports.push(*report))?;
+    Ok(End { reports, outcome })
 }
 
 /// Runs the crate's client of `config` against `server` to its end.
