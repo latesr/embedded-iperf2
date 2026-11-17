@@ -44,7 +44,7 @@ A commit message says what changes for a user of the code, and why. The diff sho
 - A fix is named as a fix. A fix and preparation for later work go in separate paragraphs.
 - Leave out what the diff shows: where code moved, which functions changed, and how the mechanism works. Name a function only when the reader needs it to follow the problem.
 - Leave out testing details. A commit that changes how the code is tested, such as with a new stress test, says so in one sentence.
-- Leave out background: a precedent the change does not follow, an aside about another tool, commit hashes, version strings, and the developer's boards and machine.
+- Leave out background: a precedent the change does not follow, an aside about another tool, commit hashes except a sync's devkit commit, version strings, and the developer's boards and machine.
 - A small change has a subject and no body. Most bodies are one to three short paragraphs, wrapped at 72 columns.
 
 Before:
