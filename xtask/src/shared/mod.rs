@@ -43,7 +43,8 @@ pub enum Command {
     },
     /// Write the git hooks that run the checks.
     InstallHooks,
-    /// Run cargo-mutants over the staged lines, or over the lines that differ from a base commit.
+    /// Run cargo-mutants over the staged lines, over the lines that differ from a base commit, or over every line.
+    /// Each package gets its own run.
     Mutants {
         /// Test the staged changes against HEAD.
         #[arg(long, conflicts_with_all = ["base", "push"])]
@@ -54,6 +55,9 @@ pub enum Command {
         /// Test the working tree against this commit.
         #[arg(long, default_value = "HEAD")]
         base: String,
+        /// Test every line of every package. The nightly CI job uses it.
+        #[arg(long, conflicts_with_all = ["staged", "push", "base"])]
+        all: bool,
     },
     /// Renumber the requirement IDs so each letter counts up from 1 in the order REQUIREMENTS.md defines them, in
     /// every file the ID check reads. Needs a tree without uncommitted changes.
@@ -84,7 +88,13 @@ pub fn run(root: &Path, command: Command) -> Result<(), String> {
             warn_all,
         ),
         Command::InstallHooks => hooks::install(root),
-        Command::Mutants { staged, push, base } => {
+        Command::Mutants { all: true, .. } => mutants::run_all(root),
+        Command::Mutants {
+            staged,
+            push,
+            base,
+            all: false,
+        } => {
             let base = if push {
                 mutants::push_base(root)?
             } else {
@@ -220,7 +230,8 @@ mod tests {
             Command::Mutants {
                 staged: true,
                 push: false,
-                base: "HEAD".to_owned()
+                base: "HEAD".to_owned(),
+                all: false,
             }
         );
         assert_eq!(
@@ -228,9 +239,26 @@ mod tests {
             Command::Mutants {
                 staged: false,
                 push: true,
-                base: "HEAD".to_owned()
+                base: "HEAD".to_owned(),
+                all: false,
             }
         );
+        assert_eq!(
+            parse(&["mutants", "--all"]).unwrap(),
+            Command::Mutants {
+                staged: false,
+                push: false,
+                base: "HEAD".to_owned(),
+                all: true,
+            }
+        );
+        for other in ["--staged", "--push", "--base"] {
+            let mut args = vec!["mutants", "--all", other];
+            if other == "--base" {
+                args.push("main");
+            }
+            assert!(parse(&args).is_err(), "{other}");
+        }
         assert!(parse(&["mutants", "--push", "--staged"]).is_err());
         assert!(parse(&["mutants", "--push", "--base", "main"]).is_err());
         assert_eq!(

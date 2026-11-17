@@ -25,6 +25,8 @@ pub fn install(root: &Path) -> Result<(), String> {
 }
 
 /// Whether the repo's `cargo xtask check --help` lists `--push`.
+// It only runs the repo's own xtask, which a temp repo in a test does not have.
+#[mutants::skip]
 fn takes_push(root: &Path) -> bool {
     std::process::Command::new("cargo")
         .current_dir(root)
@@ -109,6 +111,19 @@ mod tests {
             Some("#!/bin/sh\ncargo xtask check && exec cargo xtask mutants --push\n")
         );
         assert_eq!(read(&repo, "pre-commit").as_deref(), Some(PRE_COMMIT));
+    }
+
+    #[test]
+    fn install_writes_the_hooks_of_a_repo_whose_check_does_not_take_push() {
+        // The temp repo has no xtask, so its `cargo xtask check --help` fails and lists no `--push`.
+        let repo = TempRepo::new("hooks-install");
+        fs::create_dir_all(repo.0.join(".git/hooks")).unwrap();
+        assert_eq!(install(&repo.0), Ok(()));
+        assert_eq!(
+            read(&repo, "pre-push").as_deref(),
+            Some(PRE_PUSH_WHOLE_CHECK)
+        );
+        assert_eq!(read(&repo, "commit-msg").as_deref(), Some(COMMIT_MSG));
     }
 
     #[test]

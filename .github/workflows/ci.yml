@@ -6,7 +6,7 @@ on:
   pull_request:
   schedule:
     - cron: "0 3 * * *"
-  # Runs the nightly job by hand, such as to check a fix to it.
+  # A person can start the nightly job from the Actions page, such as to check a fix to it.
   workflow_dispatch:
 
 # No job writes to the repo.
@@ -86,4 +86,4 @@ jobs:
           path: fuzz/artifacts/
           if-no-files-found: ignore
       - name: Mutation test every crate
-        run: cargo mutants --workspace
+        run: cargo xtask mutants --all

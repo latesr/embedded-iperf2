@@ -90,7 +90,8 @@ fn nightlies(line: &str) -> Vec<&str> {
 /// The target triple that `toolchain` builds for by default, as `rustc -vV` prints it on its `host:` line.
 ///
 /// A prebuilt tool can have a default target other than the host. A cargo-fuzz built for musl builds for musl,
-/// which the address sanitizer does not support. Pass this as its `--target`.
+/// which the address sanitizer does not support. A fuzz command passes the triple to cargo-fuzz as `--target`.
+/// Fails when `rustc` for `toolchain` does not start or exits with an error, or prints no `host:` line.
 // A repo with a fuzzer calls it from its own fuzz command, and the devkit has none.
 #[allow(dead_code)]
 pub fn host_triple(toolchain: &str) -> Result<String, String> {

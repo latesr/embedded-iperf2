@@ -21,6 +21,8 @@ const STAMP: &str = "target/.sweep-stamp";
 /// sweeps every Cargo project under `root`, and each of `folders`. A folder in `folders` has its own `target/`,
 /// which a repo's check builds into and a recursive sweep does not find. Without cargo-sweep, or when a sweep
 /// fails, it says so and returns, so the check continues.
+// It only starts cargo-sweep and records the sweep. due and sweeps hold the decisions, and are tested.
+#[mutants::skip]
 pub fn daily(root: &Path, folders: &[&str]) {
     let stamp = root.join(STAMP);
     let last = std::fs::metadata(&stamp)

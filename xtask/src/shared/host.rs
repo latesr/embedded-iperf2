@@ -72,6 +72,9 @@ pub fn host_address(board: Ipv4Addr) -> Result<HostAddress, String> {
 }
 
 /// The names of this host's Wi-Fi interfaces.
+// It only runs networksetup on macOS or reads /sys/class/net elsewhere. wifi_ports and wireless_devices read
+// that output, and are tested.
+#[mutants::skip]
 fn wifi_devices() -> Result<Vec<String>, String> {
     if cfg!(target_os = "macos") {
         let output = std::process::Command::new("networksetup")

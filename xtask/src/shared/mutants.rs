@@ -1,16 +1,20 @@
 // A copy from embedded-devkit/xtask/src/shared. Edit it there, then run `cargo xtask sync` in the devkit.
 
-//! Runs cargo-mutants over the staged lines, or over the lines that differ from a base commit.
+//! Runs cargo-mutants over the staged lines, over the lines that differ from a base commit, or over every line.
 
 use super::git;
 use std::path::Path;
 use std::process::Command;
 
-/// Writes the diff to `target/mutants.diff`, then runs cargo-mutants over it. With `staged`, the diff is the
-/// staged changes against `HEAD`. Without it, the diff is the working tree against `base`.
+/// Writes the diff to `target/mutants.diff`, then runs cargo-mutants over it in each package that it touches. With
+/// `staged`, the diff is the staged changes against `HEAD`. Without it, the diff is the working tree against `base`.
+// It only starts cargo-mutants and returns its result. packages, touched and command hold the decisions, and are
+// tested.
+#[mutants::skip]
 pub fn run(root: &Path, staged: bool, base: &str) -> Result<(), String> {
     let diff = diff(root, staged, base)?;
-    if diff.is_empty() {
+    let packages = touched(&packages(root)?, &String::from_utf8_lossy(&diff));
+    if packages.is_empty() {
         println!("no lines to test");
         return Ok(());
     }
@@ -18,16 +22,108 @@ pub fn run(root: &Path, staged: bool, base: &str) -> Result<(), String> {
     let diff_path = root.join("target").join("mutants.diff");
     std::fs::write(&diff_path, diff)
         .map_err(|error| format!("{}: {error}", diff_path.display()))?;
+    run_each(root, &packages, Some(&diff_path))
+}
+
+/// Runs cargo-mutants over every line, in each package of the workspace.
+// It only starts cargo-mutants and returns its result.
+#[mutants::skip]
+pub fn run_all(root: &Path) -> Result<(), String> {
+    let packages: Vec<_> = packages(root)?
+        .into_iter()
+        .map(|package| package.name)
+        .collect();
+    super::require_tool(root, "mutants", "cargo install cargo-mutants")?;
+    run_each(root, &packages, None)
+}
+
+// Cargo unifies the features of the packages that one command builds, dev-dependencies included. Two packages
+// whose tests need features of one dependency that conflict, such as two embassy-time drivers, do not build
+// together, so each package gets its own run.
+//
+// It only starts cargo-mutants and returns its result.
+#[mutants::skip]
+fn run_each(root: &Path, packages: &[String], diff_path: Option<&Path>) -> Result<(), String> {
     let jobs = jobs();
-    println!("==> mutants, {jobs} at once");
-    let status = command(root, &diff_path, jobs)
-        .status()
-        .map_err(|error| format!("could not start cargo mutants: {error}"))?;
-    if status.success() {
+    let mut failed = Vec::new();
+    for package in packages {
+        println!("==> mutants in {package}, {jobs} at once");
+        let status = command(root, package, diff_path, jobs)
+            .status()
+            .map_err(|error| format!("could not start cargo mutants: {error}"))?;
+        if !status.success() {
+            failed.push(package.as_str());
+        }
+    }
+    if failed.is_empty() {
         Ok(())
     } else {
-        Err("cargo mutants found surviving mutants or failed".to_owned())
+        Err(format!(
+            "cargo mutants found surviving mutants or failed in {}",
+            failed.join(", ")
+        ))
     }
+}
+
+/// A package of the workspace.
+#[derive(Debug, PartialEq)]
+struct Package {
+    /// The name in the package's `Cargo.toml`.
+    name: String,
+    /// The folder the root `Cargo.toml` lists it under, relative to the root.
+    folder: String,
+}
+
+/// The packages that the root `Cargo.toml` lists in `workspace.members`, in that order. Fails when a manifest
+/// cannot be read or has no name, as for a member given as a glob.
+fn packages(root: &Path) -> Result<Vec<Package>, String> {
+    let manifest = |folder: &Path| -> Result<toml::Table, String> {
+        let path = folder.join("Cargo.toml");
+        std::fs::read_to_string(&path)
+            .map_err(|error| format!("{}: {error}", path.display()))?
+            .parse()
+            .map_err(|error| format!("{}: {error}", path.display()))
+    };
+    let workspace = manifest(root)?;
+    let members = workspace
+        .get("workspace")
+        .and_then(|workspace| workspace.get("members"))
+        .and_then(toml::Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(toml::Value::as_str);
+    members
+        .map(|folder| {
+            let name = manifest(&root.join(folder))?
+                .get("package")
+                .and_then(|package| package.get("name"))
+                .and_then(toml::Value::as_str)
+                .map(str::to_owned)
+                .ok_or_else(|| format!("{folder}/Cargo.toml has no package name"))?;
+            Ok(Package {
+                name,
+                folder: folder.to_owned(),
+            })
+        })
+        .collect()
+}
+
+/// The names of the packages that hold a file the diff adds or changes, in the order of `packages`.
+fn touched(packages: &[Package], diff: &str) -> Vec<String> {
+    let paths: Vec<_> = diff
+        .lines()
+        .filter_map(|line| line.strip_prefix("+++ b/"))
+        .collect();
+    packages
+        .iter()
+        .filter(|package| {
+            paths.iter().any(|path| {
+                path.strip_prefix(package.folder.as_str())
+                    .is_some_and(|rest| rest.starts_with('/'))
+            })
+        })
+        .map(|package| package.name.clone())
+        .collect()
 }
 
 /// The commit that `--push` tests the changes since, from [`super::checks::push_base`]. Fails without one, as
@@ -41,15 +137,17 @@ pub fn push_base(root: &Path) -> Result<String, String> {
     })
 }
 
-/// The cargo-mutants run over the diff at `diff_path`, with every feature on, because a test behind a feature
-/// does not run in a default build and every mutant it covers would survive.
-fn command(root: &Path, diff_path: &Path, jobs: usize) -> Command {
+/// The cargo-mutants run in `package`, over the diff at `diff_path` or else over every line, with every feature
+/// on.
+fn command(root: &Path, package: &str, diff_path: Option<&Path>, jobs: usize) -> Command {
     let mut command = Command::new("cargo");
     command
         .current_dir(root)
-        .arg("mutants")
-        .arg("--in-diff")
-        .arg(diff_path)
+        .args(["mutants", "--package", package]);
+    if let Some(diff_path) = diff_path {
+        command.arg("--in-diff").arg(diff_path);
+    }
+    command
         .arg("--jobs")
         .arg(jobs.to_string())
         .arg("--all-features");
@@ -60,6 +158,8 @@ fn command(root: &Path, diff_path: &Path, jobs: usize) -> Command {
 /// cargo-mutants book says to "set the number of jobs very conservatively, starting at -j2 or -j3". The build and
 /// test tools parallelise on their own, and a high count gives spurious timeouts, which count as surviving
 /// mutants. A 4-vCPU CI runner gets one job and a 10-core laptop three.
+// The count depends on the host's cores, so no test can name the right value.
+#[mutants::skip]
 fn jobs() -> usize {
     std::thread::available_parallelism()
         .map_or(1, |cores| cores.get() / 3)
@@ -173,17 +273,19 @@ mod tests {
     }
 
     #[test]
-    fn the_run_turns_every_feature_on() {
-        let command = command(
+    fn a_run_tests_one_package_with_every_feature_on() {
+        let over_diff = command(
             Path::new("/repo"),
-            Path::new("/repo/target/mutants.diff"),
+            "alpha",
+            Some(Path::new("/repo/target/mutants.diff")),
             2,
         );
-        let args: Vec<_> = command.get_args().collect();
         assert_eq!(
-            args,
+            command_args(&over_diff),
             [
                 "mutants",
+                "--package",
+                "alpha",
                 "--in-diff",
                 "/repo/target/mutants.diff",
                 "--jobs",
@@ -191,13 +293,96 @@ mod tests {
                 "--all-features"
             ]
         );
-        assert_eq!(command.get_current_dir(), Some(Path::new("/repo")));
+        assert_eq!(over_diff.get_current_dir(), Some(Path::new("/repo")));
+        assert_eq!(
+            command_args(&command(Path::new("/repo"), "alpha", None, 1)),
+            [
+                "mutants",
+                "--package",
+                "alpha",
+                "--jobs",
+                "1",
+                "--all-features"
+            ]
+        );
+    }
+
+    fn command_args(command: &Command) -> Vec<String> {
+        command
+            .get_args()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect()
+    }
+
+    /// A workspace with the members `a` and `tools/b`, whose packages are `alpha` and `beta`.
+    fn workspace(name: &str) -> TempRepo {
+        let repo = repo(name);
+        repo.write(
+            "Cargo.toml",
+            "[workspace]\nresolver = \"3\"\nmembers = [\"a\", \"tools/b\"]\n",
+        );
+        std::fs::create_dir_all(repo.0.join("a")).unwrap();
+        std::fs::create_dir_all(repo.0.join("tools/b")).unwrap();
+        repo.write("a/Cargo.toml", "[package]\nname = \"alpha\"\n");
+        repo.write("tools/b/Cargo.toml", "[package]\nname = \"beta\"\n");
+        repo
+    }
+
+    fn package(name: &str, folder: &str) -> Package {
+        Package {
+            name: name.to_owned(),
+            folder: folder.to_owned(),
+        }
+    }
+
+    #[test]
+    fn the_packages_are_the_members_by_their_names() {
+        let repo = workspace("mutants-packages");
+        assert_eq!(
+            packages(&repo.0),
+            Ok(vec![package("alpha", "a"), package("beta", "tools/b")])
+        );
+        repo.write("Cargo.toml", "[workspace]\nmembers = [\"c\"]\n");
+        let error = packages(&repo.0).unwrap_err();
+        assert!(error.contains("c/Cargo.toml"), "{error}");
+    }
+
+    #[test]
+    fn a_diff_touches_the_packages_of_the_files_it_adds_or_changes() {
+        let packages = [package("alpha", "a"), package("beta", "tools/b")];
+        let diff = |paths: &[&str]| {
+            paths
+                .iter()
+                .map(|path| format!("--- a/{path}\n+++ {path}\n@@ -1 +1 @@\n-x\n+y\n"))
+                .collect::<String>()
+        };
+        assert_eq!(
+            touched(
+                &packages,
+                &diff(&["b/tools/b/src/lib.rs", "b/a/src/lib.rs", "b/a/x.rs"])
+            ),
+            ["alpha", "beta"]
+        );
+        assert_eq!(
+            touched(
+                &packages,
+                &diff(&["b/README.md", "b/ab/src/lib.rs", "b/tools/bb.rs"])
+            ),
+            Vec::<String>::new()
+        );
+        assert_eq!(
+            touched(
+                &packages,
+                "--- a/a/src/lib.rs\n+++ /dev/null\n@@ -1 +0,0 @@\n-x\n"
+            ),
+            Vec::<String>::new()
+        );
     }
 
     #[test]
     fn nothing_staged_succeeds_without_running_cargo_mutants() {
-        // The temp repo does not have a Cargo.toml, so a cargo-mutants run there would fail.
-        let repo = repo("mutants-empty");
+        // The temp repo has no package, so a cargo-mutants run there would fail.
+        let repo = workspace("mutants-empty");
         repo.write("a.rs", "fn a() { unstaged(); }\n");
         assert_eq!(run(&repo.0, true, "HEAD"), Ok(()));
     }

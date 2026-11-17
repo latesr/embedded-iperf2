@@ -11,6 +11,8 @@ repository.workspace = true
 [dependencies]
 clap = { version = "4", features = ["derive"] }
 if-addrs = "0.15"
+# Its `#[mutants::skip]` marks the shared functions that a host test cannot check.
+mutants = "0.0.4"
 object = { version = "0.40", default-features = false, features = ["read_core", "elf", "std"] }
 pulldown-cmark = { version = "0.13", default-features = false }
 toml = "0.9"
