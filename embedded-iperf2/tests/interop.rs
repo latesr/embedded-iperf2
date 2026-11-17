@@ -4,8 +4,8 @@
 //! cover TCP and UDP, forward and reverse, in time and byte mode.
 //!
 //! Each test runs the binary that `MCU_IPERF2` names, and fails without that binary. `cargo xtask install-iperf`
-//! builds the binary. Each test's name starts with `stock_`, so that `.cargo/mutants.toml` can leave these tests
-//! out of mutation runs. The tests in `blocking.rs` cover the driver's code.
+//! builds the binary. The tests are ignored, so the pre-commit hook and cargo-mutants leave them out.
+//! `cargo xtask check --push` and `--full` run them. The tests in `blocking.rs` cover the driver's code.
 
 #![cfg(feature = "std")]
 #![allow(
@@ -362,6 +362,7 @@ fn run_against_stock(config: Config, stock: Stock, port: u16) -> (End, String) {
 }
 
 #[test]
+#[ignore = "runs a stock iperf for about ten seconds; `cargo xtask check --push` runs it"]
 fn stock_server_against_our_client() {
     for mode in modes() {
         let (stock, port) = stock_server(mode.transport);
@@ -372,6 +373,7 @@ fn stock_server_against_our_client() {
 }
 
 #[test]
+#[ignore = "runs a stock iperf for about ten seconds; `cargo xtask check --push` runs it"]
 fn stock_client_against_our_server() {
     for mode in modes() {
         let (address, ours) = serve(server_config(mode.transport));

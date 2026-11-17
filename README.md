@@ -27,7 +27,7 @@ The build needs `git`, a C and C++ compiler, and `make`. Then set `MCU_IPERF2` t
 
 ## Tests
 
-`cargo xtask check` runs the checks of a change: the links and the prose, the format, the lints, the tests, and the docs. `cargo xtask check --full` runs every check that CI runs. The interoperability tests need `MCU_IPERF2`, and fail without it.
+`cargo xtask check` runs the quick checks of a change. `cargo xtask check --push` adds the interoperability tests, the cross-target builds and the MSRV check, and the pre-push hook runs it. `cargo xtask check --full` runs every check that CI runs. The interoperability tests need `MCU_IPERF2`, and fail without it.
 
 ## Licence
 

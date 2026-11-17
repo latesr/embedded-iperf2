@@ -20,6 +20,10 @@ struct Cli {
 enum Command {
     /// Run the checks with every feature on and then off.
     Check {
+        /// Also run the slow checks, over what the branch changed since its upstream or origin/HEAD. The pre-push
+        /// hook uses it.
+        #[arg(long, conflicts_with = "full")]
+        push: bool,
         /// Run every check, over each feature alone and each pair, as CI does.
         #[arg(long)]
         full: bool,
@@ -45,7 +49,14 @@ fn main() {
     let cli = Cli::parse();
     let root = repo_root();
     let result = match cli.command {
-        Command::Check { full } => check::run(&root, full),
+        Command::Check { push, full } => check::run(
+            &root,
+            match (push, full) {
+                (_, true) => check::Scope::Full,
+                (true, false) => check::Scope::Push,
+                (false, false) => check::Scope::Commit,
+            },
+        ),
         Command::Record { only } => record::run(&root, &only),
         Command::InstallIperf => iperf::install(),
         Command::Fuzz { seconds } => fuzz::run(&root, seconds),
