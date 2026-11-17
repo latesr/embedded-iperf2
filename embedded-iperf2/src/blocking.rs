@@ -537,9 +537,15 @@ fn gone(error: &io::Error) -> bool {
     )
 }
 
-/// Returns whether `error` says only that nothing arrived or left within the timeout.
+/// Returns whether `error` says only that nothing arrived or left, because the timeout passed or a signal
+/// interrupted the call.
+// std does not retry a read or a write that a signal interrupts. On Linux, a socket with a read or write timeout
+// reports the interrupt even for a handler that asks for restarts.
 fn waited(error: &io::Error) -> bool {
-    matches!(error.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut)
+    matches!(
+        error.kind(),
+        ErrorKind::WouldBlock | ErrorKind::TimedOut | ErrorKind::Interrupted
+    )
 }
 
 #[cfg(test)]
@@ -552,7 +558,11 @@ mod tests {
         ErrorKind::BrokenPipe,
         ErrorKind::ConnectionRefused,
     ];
-    const WAITED: [ErrorKind; 2] = [ErrorKind::WouldBlock, ErrorKind::TimedOut];
+    const WAITED: [ErrorKind; 3] = [
+        ErrorKind::WouldBlock,
+        ErrorKind::TimedOut,
+        ErrorKind::Interrupted,
+    ];
 
     fn kind<T: core::fmt::Debug>(result: io::Result<T>) -> ErrorKind {
         result.unwrap_err().kind()
