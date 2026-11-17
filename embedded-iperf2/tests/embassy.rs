@@ -599,11 +599,29 @@ fn a_tcp_client_gives_up_on_a_server_that_does_not_answer_after_5_s() {
         let outcome = run_tcp_client(&mut client, &mut socket, (nobody, PORT).into(), |_| {}).await;
         let took = since(started);
         assert_eq!(outcome, Err(Error::Connect(ConnectError::TimedOut)));
-        // After the limit, the driver waits up to 1 s for its abort to leave, and nothing leaves to this address.
         assert!(
-            took >= Duration::from_secs(5) && took < Duration::from_secs(7),
+            took >= Duration::from_secs(5) && took < Duration::from_millis(5_500),
             "{took:?}"
         );
+
+        // The socket connects again. The abort's reset, which never left, must not reach the next connection.
+        let test = Config {
+            length: Length::Bytes(20_000),
+            ..Config::tcp()
+        };
+        let (server, client) = join(
+            serve(net, server_config(Transport::Tcp)),
+            tcp_client(&mut socket, test),
+        )
+        .await;
+        assert_eq!(client.outcome, Ok(Ok(())));
+        assert_eq!(server.last().bytes, 20_000);
+        let resets: Vec<_> = net
+            .tcp_flags()
+            .into_iter()
+            .filter(|(_, flags)| flags & RST != 0)
+            .collect();
+        assert_eq!(resets, Vec::new());
     });
 }
 

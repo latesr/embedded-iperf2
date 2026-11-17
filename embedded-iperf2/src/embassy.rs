@@ -95,9 +95,11 @@ pub async fn run_tcp_client(
         Either::First(Ok(())) => {}
         Either::First(Err(error)) => return Err(Error::Connect(error)),
         Either::Second(()) => {
-            // Without the abort, the socket would stay in SynSent and could not connect again.
+            // Without the abort, the socket would stay in SynSent and could not connect again. The abort's reset
+            // can stay in the socket, because the stack cannot send it while no host answers at the address. The
+            // next `connect` drops it.
+            // See <https://docs.rs/crate/smoltcp/0.13.1/source/src/socket/tcp.rs#1040>.
             socket.abort();
-            let _ = select(socket.flush(), Timer::after(CLOSE_TIMEOUT)).await;
             return Err(Error::Connect(ConnectError::TimedOut));
         }
     }
