@@ -1,4 +1,4 @@
-// A copy from embedded-devkit/xtask/src/shared. Edit it there, then run `cargo xtask sync` in the devkit.
+// A copy from embedded-conventions/xtask/src/shared. Edit it there, then run `cargo xtask sync` there.
 
 //! Checks markdown, rustdoc, code comments, and commit messages for the phrases that CHECKS.md lists.
 

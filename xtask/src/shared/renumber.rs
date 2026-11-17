@@ -1,4 +1,4 @@
-// A copy from embedded-devkit/xtask/src/shared. Edit it there, then run `cargo xtask sync` in the devkit.
+// A copy from embedded-conventions/xtask/src/shared. Edit it there, then run `cargo xtask sync` there.
 
 //! Renumbers the requirement IDs, so each letter's IDs count up from 1 in the order `REQUIREMENTS.md` defines
 //! them. Every definition and citation that the ID check reads changes in one pass.
@@ -195,9 +195,21 @@ mod tests {
         );
         repo.write("CONVENTIONS.md", "Such as B-2.\n");
         repo.write("xtask/src/shared/ids.rs", "// Such as B-2.\n");
+        fs::create_dir_all(repo.0.join("board")).unwrap();
+        fs::create_dir_all(repo.0.join(".github/workflows")).unwrap();
+        repo.write("board/Cargo.toml", "[lints]\n# @verify B-4\n");
+        repo.write(
+            ".github/workflows/ci.yml",
+            "jobs:\n  # @verify B-2, A-9\n  nightly:\n",
+        );
         commit_all(&repo);
 
         assert_eq!(run(&repo.0), Ok(()));
+        assert_eq!(read(&repo, "board/Cargo.toml"), "[lints]\n# @verify B-1\n");
+        assert_eq!(
+            read(&repo, ".github/workflows/ci.yml"),
+            "jobs:\n  # @verify B-2, A-1\n  nightly:\n"
+        );
         assert_eq!(
             read(&repo, "REQUIREMENTS.md"),
             "- **B-1** Four, after B-2.\n- **B-2** Two.\n- **A-1** Nine.\n"

@@ -1,4 +1,4 @@
-// A copy from embedded-devkit/xtask/src/shared. Edit it there, then run `cargo xtask sync` in the devkit.
+// A copy from embedded-conventions/xtask/src/shared. Edit it there, then run `cargo xtask sync` there.
 
 //! The toolchains every repo builds with, and the check that a repo installs them.
 
@@ -92,7 +92,7 @@ fn nightlies(line: &str) -> Vec<&str> {
 /// A prebuilt tool can have a default target other than the host. A cargo-fuzz built for musl builds for musl,
 /// which the address sanitizer does not support. A fuzz command passes the triple to cargo-fuzz as `--target`.
 /// Fails when `rustc` for `toolchain` does not start or exits with an error, or prints no `host:` line.
-// A repo with a fuzzer calls it from its own fuzz command, and the devkit has none.
+// A repo with a fuzzer calls it from its own fuzz command, and embedded-conventions has none.
 #[allow(dead_code)]
 pub fn host_triple(toolchain: &str) -> Result<String, String> {
     let output = Command::new("rustc")

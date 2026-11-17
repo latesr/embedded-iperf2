@@ -1,16 +1,23 @@
-// A copy from embedded-devkit/xtask/src/shared. Edit it there, then run `cargo xtask sync` in the devkit.
+// A copy from embedded-conventions/xtask/src/shared. Edit it there, then run `cargo xtask sync` there.
 
 //! Checks that every requirement ID the repo cites is defined in `REQUIREMENTS.md`, and defined once.
 //!
-//! A definition is a bold ID, such as `**C-6**`. A citation is the same ID anywhere else, in markdown or in a Rust
-//! comment. Only the letters that `REQUIREMENTS.md` defines IDs with count as ID letters, so `AES-256` and
-//! `ADR-0001` are never read as IDs. An ID in a markdown code block is not a citation, so a commit message can
-//! list old IDs in one. A repo without `REQUIREMENTS.md` has nothing to check.
+//! A definition is a bold ID, such as `**C-6**`. A citation is the same ID anywhere else: in markdown, in a Rust
+//! comment, or in a whole-line `#` comment of a `Cargo.toml` or a CI workflow. Only the letters that
+//! `REQUIREMENTS.md` defines IDs with count as ID letters, so `AES-256` and `ADR-0001` are never read as IDs. An
+//! ID in a markdown code block is not a citation, so a commit message can list old IDs in one. A repo without
+//! `REQUIREMENTS.md` has nothing to check.
 //!
-//! The copies from the devkit, the rule files and `xtask/src/shared/`, are not read. Their example IDs cite no
-//! repo's requirements, and a renumber must not edit a copy in place. The devkit holds the originals, so they must
-//! not cite a devkit requirement either: the check would not see the citation, and a sync would copy it to every
-//! repo.
+//! A test, or a check that is not a test, names each requirement it verifies in a comment that starts with
+//! `@verify`, such as `// @verify C-6` or `# @verify C-6` in a `Cargo.toml` or a CI workflow. [`unverified`] lists
+//! the IDs that no such comment names. Only that form counts, so a passing mention of an ID is not coverage. The
+//! comment names each ID singly, so `C-1 to C-3` names C-1 and C-3 only. Once a repo's list is empty, its
+//! `check.rs` fails the check when an ID joins the list.
+//!
+//! The copies from embedded-conventions, the rule files and `xtask/src/shared/`, are not read. Their example IDs
+//! cite no repo's requirements, and a renumber must not edit a copy in place. embedded-conventions holds the
+//! originals, so they must not cite its requirements either: the check would not see the citation, and a sync would
+//! copy it to every repo.
 //!
 //! A renumber rewrites an ID in a heading, and not the anchors that link to the heading. The links check then
 //! reports each broken anchor.
@@ -43,6 +50,113 @@ pub fn check(root: &Path) -> Vec<String> {
     problems
 }
 
+/// Each ID that `REQUIREMENTS.md` defines and no `@verify` comment names, in the order the file defines them.
+pub fn unverified(root: &Path) -> Vec<String> {
+    let Ok(requirements) = fs::read_to_string(root.join("REQUIREMENTS.md")) else {
+        return Vec::new();
+    };
+    let defined = definitions(&requirements);
+    let verified = verified(root, &letters(&defined));
+    let mut seen = BTreeSet::new();
+    defined_in_order(&requirements)
+        .into_iter()
+        .filter(|id| seen.insert(id.clone()) && !verified.contains(id))
+        .collect()
+}
+
+/// The line that `links` prints when some IDs have no `@verify` comment, or `None` when every ID has one.
+pub fn coverage(root: &Path) -> Option<String> {
+    let missing = unverified(root).len();
+    if missing == 0 {
+        return None;
+    }
+    let total = fs::read_to_string(root.join("REQUIREMENTS.md"))
+        .map_or(0, |requirements| definitions(&requirements).len());
+    Some(format!(
+        "{missing} of {total} requirement IDs have no @verify comment, listed by `cargo xtask links`"
+    ))
+}
+
+/// The word that opens a comment naming the requirements that a test, or a check that is not a test, verifies.
+const VERIFY: &str = "@verify";
+
+/// Each ID that an `@verify` comment under `root` names, from the comments that count. In a Rust file a comment
+/// counts in a `tests` folder, in `xtask`, in `fuzz`, or after a `#[cfg(test)]` line, so a test, a fuzz target or
+/// the check code holds it. A `Cargo.toml` and a CI workflow hold the checks that are not tests, such as a lint or
+/// a feature-combination run, so every `#` comment there counts. Other TOML files, such as `clippy.toml`, do not
+/// count: the workspace lints in `Cargo.toml` and a repo's `check.rs` cite what they enforce.
+fn verified(root: &Path, letters: &BTreeSet<String>) -> BTreeSet<String> {
+    let names = |comment: &str| {
+        comment
+            .trim_start()
+            .strip_prefix(VERIFY)
+            .filter(|rest| rest.is_empty() || rest.starts_with(' '))
+            .map(|rest| citations(rest, letters).into_iter().map(|(_, id)| id))
+    };
+    let mut found = BTreeSet::new();
+    for (path, text) in read_files(root, "rs") {
+        if is_synced(&path) {
+            continue;
+        }
+        let anywhere = path.starts_with("xtask")
+            || path.starts_with("fuzz")
+            || path.components().any(|part| part.as_os_str() == "tests");
+        let mut in_tests = false;
+        for line in text.lines() {
+            in_tests |= line.trim_start().starts_with("#[cfg(test)]");
+            let comment = whole_line_comment(line).or_else(|| trailing_comment(line));
+            if let Some(ids) = comment.and_then(names)
+                && (anywhere || in_tests)
+            {
+                found.extend(ids);
+            }
+        }
+    }
+    for (_, text) in manifests_and_workflows(root) {
+        for line in text.lines() {
+            if let Some(ids) = line.trim_start().strip_prefix('#').and_then(names) {
+                found.extend(ids);
+            }
+        }
+    }
+    found
+}
+
+/// Each `Cargo.toml` and each CI workflow under `root`, with its path relative to `root`. They hold the checks
+/// that are not tests, so their whole-line `#` comments cite IDs.
+fn manifests_and_workflows(root: &Path) -> Vec<(PathBuf, String)> {
+    let mut found: Vec<(PathBuf, String)> = read_files(root, "toml")
+        .into_iter()
+        .filter(|(path, _)| path.file_name().is_some_and(|name| name == "Cargo.toml"))
+        .collect();
+    found.extend(workflows(root));
+    found
+}
+
+/// Each CI workflow under `.github/workflows/`, keyed by its path relative to `root`. `read_files` skips hidden
+/// folders, so the workflows are read here.
+fn workflows(root: &Path) -> Vec<(PathBuf, String)> {
+    let folder = Path::new(".github").join("workflows");
+    let Ok(entries) = fs::read_dir(root.join(&folder)) else {
+        return Vec::new();
+    };
+    let mut found: Vec<(PathBuf, String)> = entries
+        .flatten()
+        .filter(|entry| {
+            entry
+                .path()
+                .extension()
+                .is_some_and(|extension| extension == "yml" || extension == "yaml")
+        })
+        .filter_map(|entry| {
+            let text = fs::read_to_string(entry.path()).ok()?;
+            Some((folder.join(entry.file_name()), text))
+        })
+        .collect();
+    found.sort();
+    found
+}
+
 /// One line per ID that the commit message at `path` cites and `REQUIREMENTS.md` does not define. Git drops the
 /// lines that start with `#`, so they are not read.
 pub fn check_message(root: &Path, path: &Path) -> Result<Vec<String>, String> {
@@ -60,8 +174,8 @@ pub fn check_message(root: &Path, path: &Path) -> Result<Vec<String>, String> {
     Ok(undefined(path, &kept, cited, &defined))
 }
 
-/// Each markdown and Rust file the check reads under `root`, keyed by its path relative to `root`, with its text
-/// and the IDs it cites in order.
+/// Each markdown, Rust, `Cargo.toml` and CI workflow file the check reads under `root`, keyed by its path relative
+/// to `root`, with its text and the IDs it cites in order. A renumber rewrites the same files.
 pub(super) fn citations_by_file(
     root: &Path,
     letters: &BTreeSet<String>,
@@ -74,13 +188,40 @@ pub(super) fn citations_by_file(
         let cited = rust_citations(&text, letters);
         (path, (text, cited))
     });
+    let hashed = manifests_and_workflows(root)
+        .into_iter()
+        .map(|(path, text)| {
+            let cited = hash_citations(&text, letters);
+            (path, (text, cited))
+        });
     markdown
         .chain(rust)
+        .chain(hashed)
         .filter(|(path, _)| !is_synced(path))
         .collect()
 }
 
-/// Whether the file at `path`, relative to the repo root, is a copy from the devkit.
+/// The IDs with letters in `letters` in the whole-line `#` comments of a TOML or YAML file, with their ranges in
+/// `text`.
+fn hash_citations(text: &str, letters: &BTreeSet<String>) -> Vec<Citation> {
+    let mut found = Vec::new();
+    let mut line_start = 0usize;
+    for line in text.split_inclusive('\n') {
+        if let Some(comment) = line.trim_start().strip_prefix('#') {
+            let start = line_start.saturating_add(line.len().saturating_sub(comment.len()));
+            found.extend(citations(comment, letters).into_iter().map(|(range, id)| {
+                (
+                    start.saturating_add(range.start)..start.saturating_add(range.end),
+                    id,
+                )
+            }));
+        }
+        line_start = line_start.saturating_add(line.len());
+    }
+    found
+}
+
+/// Whether the file at `path`, relative to the repo root, is a copy from embedded-conventions.
 fn is_synced(path: &Path) -> bool {
     RULE_FILES.iter().any(|file| path == Path::new(file)) || path.starts_with("xtask/src/shared")
 }
@@ -293,6 +434,63 @@ mod tests {
                 "src/lib.rs:2: cites C-8, which REQUIREMENTS.md does not define".to_owned(),
             ]
         );
+    }
+
+    #[test]
+    fn only_an_at_verify_line_in_a_test_or_beside_a_check_verifies_an_id() {
+        let repo = TempRepo::new("ids-verify");
+        for dir in [
+            "src",
+            "tests",
+            "xtask/src/shared",
+            ".github/workflows",
+            "board",
+            "fuzz/fuzz_targets",
+        ] {
+            fs::create_dir_all(repo.0.join(dir)).unwrap();
+        }
+        repo.write(
+            "REQUIREMENTS.md",
+            "- **C-1** One.\n- **C-2** Two.\n- **C-3** Three.\n- **C-4** Four.\n- **C-5** Five.\n- **C-6** Six.\n- **C-7** Seven.\n- **C-8** Eight.\n- **C-10** Ten.\n",
+        );
+        repo.write(
+            "fuzz/fuzz_targets/parse.rs",
+            "// @verify C-10\nfuzz_target!(|data: &[u8]| {});\n",
+        );
+        repo.write(
+            "src/lib.rs",
+            "// @verify C-8\nfn a() {} // As C-1 says.\n#[cfg(test)]\nmod tests {\n    // @verify C-1, C-2\n    #[test]\n    fn t() {}\n}\n",
+        );
+        repo.write("tests/all.rs", "/// @verify C-3\n#[test]\nfn u() {}\n");
+        repo.write("xtask/src/check.rs", "// @verify C-4\nfn licence() {}\n");
+        repo.write(
+            "board/Cargo.toml",
+            "[lints]\n# @verify C-5\n# C-6 is not verified here.\n",
+        );
+        repo.write("board/other.toml", "# @verify C-7\n");
+        repo.write(
+            ".github/workflows/ci.yml",
+            "jobs:\n  # @verify C-9\n  nightly:\n",
+        );
+        repo.write(".github/workflows/nightly.yaml", "# @verify C-6\n");
+        repo.write(".github/workflows/notes.txt", "# @verify C-7\n");
+        repo.write("xtask/src/shared/ids.rs", "// @verify C-7\n");
+        assert_eq!(unverified(&repo.0), ["C-7", "C-8"]);
+        assert_eq!(
+            check(&repo.0),
+            [".github/workflows/ci.yml:2: cites C-9, which REQUIREMENTS.md does not define"]
+        );
+        assert_eq!(
+            coverage(&repo.0).as_deref(),
+            Some("2 of 9 requirement IDs have no @verify comment, listed by `cargo xtask links`")
+        );
+
+        repo.write(
+            "src/lib.rs",
+            "#[cfg(test)]\n// @verify C-1, C-2, C-7, C-8\n",
+        );
+        assert_eq!(unverified(&repo.0), Vec::<String>::new());
+        assert_eq!(coverage(&repo.0), None);
     }
 
     #[test]

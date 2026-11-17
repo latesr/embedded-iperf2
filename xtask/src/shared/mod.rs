@@ -1,4 +1,4 @@
-// A copy from embedded-devkit/xtask/src/shared. Edit it there, then run `cargo xtask sync` in the devkit.
+// A copy from embedded-conventions/xtask/src/shared. Edit it there, then run `cargo xtask sync` there.
 
 //! The commands every repo shares. A repo's `main.rs` flattens [`Command`] into its own commands.
 
@@ -22,7 +22,8 @@ use std::path::{Path, PathBuf};
 /// The shared commands.
 #[derive(Subcommand, Debug, PartialEq)]
 pub enum Command {
-    /// Check relative links, heading anchors, and requirement IDs, or the requirement IDs in one commit message file.
+    /// Check relative links, heading anchors, and requirement IDs, and list the IDs that no `@verify` comment names.
+    /// With `--message`, check the requirement IDs in one commit message file.
     Links {
         /// A commit message file to check the requirement IDs of, in place of the repo.
         #[arg(long)]
@@ -67,7 +68,13 @@ pub enum Command {
 /// Runs one shared command in the repo at `root`.
 pub fn run(root: &Path, command: Command) -> Result<(), String> {
     match command {
-        Command::Links { message: None } => links::run(root),
+        Command::Links { message: None } => {
+            links::run(root)?;
+            for id in ids::unverified(root) {
+                eprintln!("no @verify comment names {id}");
+            }
+            Ok(())
+        }
         Command::Links {
             message: Some(path),
         } => {

@@ -1,4 +1,4 @@
-// A copy from embedded-devkit/xtask/src/shared. Edit it there, then run `cargo xtask sync` in the devkit.
+// A copy from embedded-conventions/xtask/src/shared. Edit it there, then run `cargo xtask sync` there.
 
 //! Runs and times the steps of `cargo xtask check`, and decides which groups of steps and which crates of the
 //! root workspace a commit's changes reach.

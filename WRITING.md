@@ -1,8 +1,8 @@
 # Writing
 
-These rules apply to everything written in a repo that syncs from embedded-devkit: ADRs, READMEs, `REQUIREMENTS.md`, rustdoc, code comments, and commit messages. Three files add rules for one kind of text: `CONTRIBUTING.md` for commit messages, `CODE.md` for rustdoc and code comments, and `DOCS.md` for ADRs.
+These rules apply to everything written in a repo that syncs from embedded-conventions: ADRs, READMEs, `REQUIREMENTS.md`, rustdoc, code comments, and commit messages. Three files add rules for one kind of text: `CONTRIBUTING.md` for commit messages, `CODE.md` for rustdoc and code comments, and `DOCS.md` for ADRs.
 
-This file is a copy from embedded-devkit. Edit it there, then run `cargo xtask sync` in the devkit.
+This file is a copy from embedded-conventions. Edit it there, then run `cargo xtask sync` in embedded-conventions.
 
 Write to the writing rules of ASD-STE100 Simplified Technical English, for an engineer who is new to the repo and reads the text once. Some readers speak English as a second language. The STE dictionary of approved words does not apply. Spelling is British. Personal communication is outside these rules.
 
@@ -20,7 +20,7 @@ Write to the writing rules of ASD-STE100 Simplified Technical English, for an en
 ## The rules this repo adds
 
 - Text is impersonal: no "we", "I", or "you". Write "The smoke test measured 1.6 ms", not "We measured 1.6 ms". An example in rustdoc or a README can address the reader: "Create a `Console`, then call `run`."
-- Write `must` for a requirement, `can` for an ability, and `do not` for a prohibition. Do not write "will" where the present tense serves, or "allows you to".
+- Write `must` for a rule, `can` for an ability, and `do not` for a prohibition. Do not write "will" where the present tense serves, or "allows you to".
 - Use the ordinary word: "uses", not "rests on", "checked", not "established", "fixes", not "addresses", and "adds", not "gains".
 - Keep the precise term: "write-back", not "save". Define an uncommon term once, in the module docs or in the Terms of `REQUIREMENTS.md`, and link it.
 - Write "has" or "holds" for what a record, message, or struct contains. Keep "carries" for something that moves: "a port carries signals".

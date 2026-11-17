@@ -1,8 +1,8 @@
 # Checks
 
-`cargo xtask check` runs the quick checks over what a change reaches, and the pre-commit hook runs it. `cargo xtask check --push` runs the quick and the slow checks over what the branch changed, and the pre-push hook runs it. `--full` runs every check on every crate, and CI runs it on every push and pull request. To save time while working, an agent runs the tests of the crate it changes with `cargo test -p <crate>`.
+`cargo xtask check` runs the quick checks over what a change reaches, and the pre-commit hook runs it. `cargo xtask check --push` runs the quick and the slow checks over what the branch changed, and the pre-push hook runs it. `--full` runs every check on every crate, and CI runs it on every push and pull request. To save time while working, an agent runs the tests of the crate it changes with `cargo test -p <crate>`. CI also runs the mutation check over what each push or pull request changes, and over every line each night that `main` has changed. Every line is also checked before each release.
 
-This file is a copy from embedded-devkit. Edit it there, then run `cargo xtask sync` in the devkit.
+This file is a copy from embedded-conventions. Edit it there, then run `cargo xtask sync` in embedded-conventions.
 
 | Check | Runs in | Command |
 |---|---|---|
@@ -50,6 +50,6 @@ On an ADR, it also marks a sentence that shares most of its words with another o
 
 ## Requirement IDs
 
-`cargo xtask links` fails when markdown or a Rust comment cites an ID that `REQUIREMENTS.md` does not define, or when `REQUIREMENTS.md` defines an ID twice. A definition is the bold ID, such as `**C-6**`. Only the letters that `REQUIREMENTS.md` defines IDs with count, so `AES-256` and `ADR-0001` are not IDs. The commit-msg hook runs the same check over the message. The check cannot tell a right ID from a wrong one that exists. The check does not look for IDs in the rule files, `xtask/src/shared/`, or markdown code blocks.
+`cargo xtask links` fails when markdown or a Rust comment cites an ID that `REQUIREMENTS.md` does not define, or when `REQUIREMENTS.md` defines an ID twice. A definition is the bold ID, such as `**C-6**`. Only the letters that `REQUIREMENTS.md` defines IDs with count, so `AES-256` and `ADR-0001` are not IDs. The commit-msg hook runs the same check over the message. The check cannot tell a right ID from a wrong one that exists. The check does not look for IDs in the rule files, `xtask/src/shared/`, or markdown code blocks. `cargo xtask links` also lists each ID that no `@verify` comment names, and `cargo xtask check` prints their count. Once a repo's list is empty, its `check.rs` fails the check when an ID joins the list.
 
 IDs are renumbered once, just before the first release, so they read in order from then on. One commit reorders `REQUIREMENTS.md` by hand. It changes no ID, except that a requirement that moves to another section takes the next free number of its new letter. The next commit runs `cargo xtask renumber`. It numbers each letter's IDs from 1 in the order the file defines them, rewrites every citation, and prints the mapping for the commit message. After the first release, an ID never changes.

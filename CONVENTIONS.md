@@ -1,8 +1,8 @@
 # Conventions
 
-These rules state how the user and the user's agents work in every repo that syncs from embedded-devkit. `CONTRIBUTING.md` states what every change must meet, whoever makes it.
+These rules state how the user and the user's agents work in every repo that syncs from embedded-conventions. `CONTRIBUTING.md` states what every change must meet, whoever makes it.
 
-This file is a copy from embedded-devkit. Edit it there, then run `cargo xtask sync` in the devkit.
+This file is a copy from embedded-conventions. Edit it there, then run `cargo xtask sync` in embedded-conventions.
 
 ## Rules for agents
 

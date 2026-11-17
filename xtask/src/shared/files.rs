@@ -1,4 +1,4 @@
-// A copy from embedded-devkit/xtask/src/shared. Edit it there, then run `cargo xtask sync` in the devkit.
+// A copy from embedded-conventions/xtask/src/shared. Edit it there, then run `cargo xtask sync` there.
 
 //! Finds the repo's source files for the checks that read them.
 
@@ -6,8 +6,8 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-/// The rule files at the repo root that are copies from the devkit: `CONTRIBUTING.md`, the files its Where to look
-/// table names, and `CONVENTIONS.md`.
+/// The rule files at the repo root that are copies from embedded-conventions: `CONTRIBUTING.md`, the files its
+/// Where to look table names, and `CONVENTIONS.md`.
 pub const RULE_FILES: [&str; 8] = [
     "CONTRIBUTING.md",
     "CONVENTIONS.md",

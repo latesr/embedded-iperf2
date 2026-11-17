@@ -1,4 +1,4 @@
-// A copy from embedded-devkit/xtask/src/shared. Edit it there, then run `cargo xtask sync` in the devkit.
+// A copy from embedded-conventions/xtask/src/shared. Edit it there, then run `cargo xtask sync` there.
 
 //! Runs cargo-mutants over the staged lines, over the lines that differ from a base commit, or over every line.
 
@@ -75,7 +75,7 @@ struct Package {
 }
 
 /// The packages that the root `Cargo.toml` lists in `workspace.members`, in that order. Fails when a manifest
-/// cannot be read or has no name, as for a member given as a glob.
+/// cannot be read or lacks a name, as for a member given as a glob.
 fn packages(root: &Path) -> Result<Vec<Package>, String> {
     let manifest = |folder: &Path| -> Result<toml::Table, String> {
         let path = folder.join("Cargo.toml");
@@ -314,7 +314,7 @@ mod tests {
             .collect()
     }
 
-    /// A workspace with the members `a` and `tools/b`, whose packages are `alpha` and `beta`.
+    /// A workspace with the members `a` and `tools/b`. Their packages are `alpha` and `beta`.
     fn workspace(name: &str) -> TempRepo {
         let repo = repo(name);
         repo.write(
@@ -381,7 +381,7 @@ mod tests {
 
     #[test]
     fn nothing_staged_succeeds_without_running_cargo_mutants() {
-        // The temp repo has no package, so a cargo-mutants run there would fail.
+        // A cargo-mutants run in the temp repo would fail, because the repo holds no package.
         let repo = workspace("mutants-empty");
         repo.write("a.rs", "fn a() { unstaged(); }\n");
         assert_eq!(run(&repo.0, true, "HEAD"), Ok(()));

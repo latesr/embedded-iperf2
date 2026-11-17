@@ -1,8 +1,8 @@
 # Code
 
-These rules apply to every crate in a repo that syncs from embedded-devkit, host tools included. `EMBEDDED.md` adds the rules for a library crate that runs on a microcontroller.
+These rules apply to every crate in a repo that syncs from embedded-conventions, host tools included. `EMBEDDED.md` adds the rules for a library crate that runs on a microcontroller.
 
-This file is a copy from embedded-devkit. Edit it there, then run `cargo xtask sync` in the devkit.
+This file is a copy from embedded-conventions. Edit it there, then run `cargo xtask sync` in embedded-conventions.
 
 ## Rust only
 

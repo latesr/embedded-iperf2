@@ -1,8 +1,8 @@
 # Testing
 
-These rules apply to every crate in a repo that syncs from embedded-devkit. `EMBEDDED.md` adds the rules for tests in a `no_std` crate.
+These rules apply to every crate in a repo that syncs from embedded-conventions. `EMBEDDED.md` adds the rules for tests in a `no_std` crate.
 
-This file is a copy from embedded-devkit. Edit it there, then run `cargo xtask sync` in the devkit.
+This file is a copy from embedded-conventions. Edit it there, then run `cargo xtask sync` in embedded-conventions.
 
 ## Where a test goes
 
@@ -13,6 +13,7 @@ This file is a copy from embedded-devkit. Edit it there, then run `cargo xtask s
 - Behaviour across components is tested in `tests/`. The real collaborators are wired together over in-memory fakes at the edge, such as a buffer for the network or a mock flash.
 - An internal helper that the integration tests exercise does not get its own test. A test tied to internal structure makes refactoring harder, and does not add coverage.
 - `REQUIREMENTS.md` states the property tests that every parser needs. Property tests elsewhere are encouraged, and not required.
+- A test that fails when a requirement is not met has an `@verify` comment that names its ID, such as `// @verify K-3`. A check that is not a test, such as a lint in `Cargo.toml`, has one beside it.
 
 ## Test first
 
@@ -67,4 +68,4 @@ Exclude a mutant that times out only when the mutated line is the loop's only ex
 
 A change can make an unchanged line dead, for example by moving a decision it made elsewhere. When a commit changes what other lines in a file mean, run `cargo mutants -f <file> --all-features` on that file before committing, with the `--jobs` that `cargo xtask mutants` uses. A commit that only adds or edits lines with a meaning that stays in place needs only the hook's run.
 
-`REQUIREMENTS.md` states what CI runs.
+`CHECKS.md` and `AGENTS.md` state what CI runs.

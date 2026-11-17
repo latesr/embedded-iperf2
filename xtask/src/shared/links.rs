@@ -1,21 +1,24 @@
-// A copy from embedded-devkit/xtask/src/shared. Edit it there, then run `cargo xtask sync` in the devkit.
+// A copy from embedded-conventions/xtask/src/shared. Edit it there, then run `cargo xtask sync` there.
 
 //! Checks every relative link and heading anchor in the repo's markdown files.
 //!
 //! A link is relative when it does not have a scheme. The target file must exist, and a `#fragment` must match a heading in it.
 //! Every page under `docs/` must be linked from `docs/README.md`. Every cited requirement ID must be defined, as
 //! the `ids` module checks. Every ADR must have the shape the `adrs` module checks. The check warns on a long ADR
-//! that differs from `HEAD`.
+//! that differs from `HEAD`, and prints how many requirement IDs no `@verify` comment names.
 
 use pulldown_cmark::{Event, Parser, Tag, TagEnd};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-/// Runs the check and prints every problem. Fails when there is at least one. The warnings go to stderr and do not
-/// fail.
+/// Runs the check and prints every problem. Fails when there is at least one. The warnings and the count of IDs
+/// without an `@verify` comment go to stderr and do not fail.
 pub fn run(root: &Path) -> Result<(), String> {
     for warning in warnings(root) {
         eprintln!("{warning}");
+    }
+    if let Some(line) = super::ids::coverage(root) {
+        eprintln!("{line}");
     }
     let problems = check(root);
     if problems.is_empty() {

@@ -1,12 +1,12 @@
-// A copy from embedded-devkit/xtask/src/shared. Edit it there, then run `cargo xtask sync` in the devkit.
+// A copy from embedded-conventions/xtask/src/shared. Edit it there, then run `cargo xtask sync` there.
 
 //! The address of this host that a board on the local network connects back to. The OS routes to the board
 //! through any interface on its subnet, which can be Wi-Fi while a wired one is up, so the choice is made here
 //! and printed.
 
-// The devkit's own commands do not call it. Other repos' `cargo xtask hil` does. `mcu-scenario` holds the public
-// copy, `mcu_scenario::host_address`, which scenario tests use. This copy goes when those `hil` commands move
-// onto `mcu-scenario`.
+// The commands of embedded-conventions do not call it. Other repos' `cargo xtask hil` does. `mcu-scenario` holds
+// the public copy, `mcu_scenario::host_address`, which scenario tests use. This copy goes when those `hil` commands
+// move onto `mcu-scenario`.
 #![allow(dead_code)]
 
 use std::fmt;

@@ -2,7 +2,7 @@
 
 These rules add to `CODE.md` and `TESTING.md` for every library crate that runs on a microcontroller. Host tools, `xtask`, and crates that build only with `std` do not follow them.
 
-This file is a copy from embedded-devkit. Edit it there, then run `cargo xtask sync` in the devkit.
+This file is a copy from embedded-conventions. Edit it there, then run `cargo xtask sync` in embedded-conventions.
 
 ## Embedded rules
 
@@ -21,7 +21,7 @@ This file is a copy from embedded-devkit. Edit it there, then run `cargo xtask s
 - Arithmetic overflow panics in debug builds and on targets that enable overflow checks. Use a checked, saturating, or wrapping operation, and choose the one the value needs.
 - A 64-bit division on a 32-bit target links about 900 bytes of `compiler_builtins`. Keep hot paths free of it.
 - The `thumbv6m-none-eabi` build catches compare-and-swap atomics. A `--no-default-features` build of each core crate catches code that needs a feature.
-- The caller supplies time, randomness, and key material through the traits in `REQUIREMENTS.md`.
+- The caller supplies time, randomness, and key material. A library takes them through a trait in its API, or through a driver that the firmware registers at link time, such as embassy-crypto's `Rng`.
 - `REQUIREMENTS.md` lists the dependency crates with traits that can appear in a public API. Any other dependency type in a public API needs an Architectural Decision Record (ADR).
 - Board support code lives in the examples and the hardware test firmware. It never enters a library crate.
 

@@ -1,4 +1,4 @@
-// A copy from embedded-devkit/xtask/src/shared. Edit it there, then run `cargo xtask sync` in the devkit.
+// A copy from embedded-conventions/xtask/src/shared. Edit it there, then run `cargo xtask sync` there.
 
 //! Removes old build files once a day, through cargo-sweep. Cargo never removes a build, so `target/` fills with
 //! one for each feature set and each version of each crate, and rustc reads the metadata of every one for each

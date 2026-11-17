@@ -2,7 +2,7 @@
 
 These rules state where each kind of knowledge goes, and add to `WRITING.md` for an Architectural Decision Record (ADR).
 
-This file is a copy from embedded-devkit. Edit it there, then run `cargo xtask sync` in the devkit.
+This file is a copy from embedded-conventions. Edit it there, then run `cargo xtask sync` in embedded-conventions.
 
 ## What goes where
 
