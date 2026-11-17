@@ -21,4 +21,4 @@ The recorder and the interoperability tests need the binary that `MCU_IPERF2` na
 
 ## Fuzzing
 
-`cargo xtask fuzz --seconds N` seeds the corpus with each record of each sample, and runs the `parse` target in `fuzz/` for that long. The files that count as a parser are `embedded-iperf2/src/wire/`.
+`cargo xtask fuzz --seconds N` seeds the corpus with each record of each sample, and runs the `parse` target in `fuzz/` for that long. The files that count as a parser are `embedded-iperf2/src/wire/`. The nightly CI job runs it for ten minutes.

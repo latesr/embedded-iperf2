@@ -307,6 +307,7 @@ Without a start timeout, the server waits without a limit. A start timeout of ze
 
 - The crates build on stable Rust. The minimum supported Rust version (MSRV) is 1.91, with edition 2024.
 - A public API names types from `embassy-net` only behind the `embassy-net` feature, and from the standard library only behind the `std` feature.
+- Every combination of a published crate's features builds.
 
 `EMBEDDED.md` names the lints that enforce the code constraints.
 
@@ -335,13 +336,6 @@ Without a start timeout, the server waits without a limit. A start timeout of ze
 **T-5** On loopback, the `std` driver runs a client against a stock iperf 2.2.2 server, and a server against a stock iperf 2.2.2 client. Each runs TCP and UDP, forward and reverse, in time mode and byte mode. The report of the stock binary and the report of the driver agree on the bytes, and on the lost and out-of-order counts.
 
 **T-6** The `embassy-net` driver runs a client against its own server over two embassy-net stacks in one process, in each mode of T-5.
-
-### Continuous integration
-
-- CI runs `cargo xtask check --full` on every push to `main` and on every pull request. `CHECKS.md` and `AGENTS.md` list what it runs.
-- CI runs cargo-mutants over the lines that each push or pull request changes.
-- A full cargo-mutants run covers every crate nightly, and before each release.
-- The nightly job checks every feature combination of every published crate with `cargo hack`. `cargo xtask check --full` covers each feature alone and each pair.
 
 ## Licence
 

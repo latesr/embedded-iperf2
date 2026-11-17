@@ -46,6 +46,9 @@ jobs:
       - run: cargo xtask install-iperf
       - run: echo "MCU_IPERF2=$HOME/.local/opt/iperf/2.2.2/iperf" >> "$GITHUB_ENV"
       - run: cargo xtask check --full
+      # Cargo rewrites a lock file that does not match its manifests, and the check then tests what was not committed.
+      - name: Fail on a lock file that the check changed
+        run: git diff --exit-code -- '*Cargo.lock'
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-mutants
